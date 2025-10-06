@@ -1,12 +1,68 @@
-<!doctype html>
+ype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Emotion Detector</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; line-height: 1.5; }
+      h1 { margin-top: 0; }
+      textarea { width: 100%; max-width: 800px; height: 140px; }
+      button { padding: 0.6rem 1rem; font-size: 1rem; cursor: pointer; }
+      .result { margin-top: 1rem; white-space: pre-wrap; }
+      .error { color: #b00020; }
+      .muted { color: #666; }
+    </style>
   </head>
   <body>
     <h1>Emotion Detector</h1>
-    <p>Open <code>/</code> to use the built in page or POST to <code>/emotionDetector</code>.</p>
+
+    <p class="muted">Enter some text, then submit. You can also POST JSON to <code>/emotionDetector</code> with a <code>{"text": "..."}</code> body.</p>
+
+    <textarea id="text" placeholder="Type text to analyze..."></textarea>
+    <div>
+      <button id="analyze">Analyze</button>
+    </div>
+
+    <div id="out" class="result"></div>
+
+    <script>
+      const btn = document.getElementById('analyze');
+      const out = document.getElementById('out');
+
+      btn.addEventListener('click', async () => {
+        const text = document.getElementById('text').value;
+        out.textContent = 'Analyzing...';
+
+        try {
+          const res = await fetch('/emotionDetector', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+          });
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || ('HTTP ' + res.status));
+          }
+
+          const data = await res.json();
+          const lines = [
+            `anger:   ${data.anger?.toFixed?.(3) ?? data.anger}`,
+            `disgust: ${data.disgust?.toFixed?.(3) ?? data.disgust}`,
+            `fear:    ${data.fear?.toFixed?.(3) ?? data.fear}`,
+            `joy:     ${data.joy?.toFixed?.(3) ?? data.joy}`,
+            `sadness: ${data.sadness?.toFixed?.(3) ?? data.sadness}`,
+            ``,
+            `dominant_emotion: ${data.dominant_emotion}`
+          ];
+          out.classList.remove('error');
+          out.textContent = lines.join('\n');
+        } catch (e) {
+          out.classList.add('error');
+          out.textContent = 'Error: ' + (e && e.message ? e.message : e);
+        }
+      });
+    </script>
   </body>
 </html>
