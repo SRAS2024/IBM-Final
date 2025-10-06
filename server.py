@@ -8,21 +8,12 @@ from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-# Support either a package named "emotion_app" or "Final"
-try:
-    from emotion_app import (
-        emotion_detector,
-        format_emotions,
-        InvalidTextError,
-        ServiceUnavailableError,
-    )
-except ImportError:  # fallback to "Final" package name
-    from Final import (
-        emotion_detector,
-        format_emotions,
-        InvalidTextError,
-        ServiceUnavailableError,
-    )
+from emotion_app import (
+    emotion_detector,
+    format_emotions,
+    InvalidTextError,
+    ServiceUnavailableError,
+)
 
 load_dotenv()
 
@@ -32,7 +23,6 @@ CORS(app)
 
 @app.get("/")
 def index() -> Any:
-    """Serve the HTML file committed to the repo."""
     return send_file("emoindex.html")
 
 
