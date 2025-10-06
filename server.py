@@ -1,10 +1,10 @@
-""Flask server for the Emotion Detector project."""
+"""Flask server for the Emotion Detector project."""
 from __future__ import annotations
 
 import os
 from typing import Any, Dict
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -29,50 +29,16 @@ load_dotenv()
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app)
 
-INDEX_HTML = """
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Emotion Detector</title>
-    <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 2rem; }
-      .card { max-width: 720px; padding: 1rem; border: 1px solid #ddd; border-radius: 8px; }
-      textarea { width: 100%; min-height: 120px; }
-      pre { background: #f8f8f8; padding: 0.75rem; border-radius: 6px; overflow: auto; }
-      button { padding: 0.5rem 1rem; }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Emotion Detector</h1>
-      <p>Enter text and submit. The API returns emotion scores and the dominant emotion.</p>
-      <textarea id="text" placeholder="Type here..."></textarea>
-      <br><br>
-      <button onclick="detect()">Analyze</button>
-      <h3>Result</h3>
-      <pre id="out">{}</pre>
-    </div>
-    <script>
-      async function detect() {
-        const text = document.getElementById('text').value;
-        const resp = await fetch('/emotionDetector', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text })
-        });
-        const data = await resp.json();
-        document.getElementById('out').textContent = JSON.stringify(data, null, 2);
-      }
-    </script>
-  </body>
-</html>
-"""
-
 
 @app.get("/")
 def index() -> Any:
-    return render_template_string(INDEX_HTML)
+    """Serve the HTML file committed to the repo."""
+    return send_file("emoindex.html")
+
+
+@app.get("/health")
+def health() -> tuple[str, int]:
+    return "ok", 200
 
 
 @app.post("/emotionDetector")
