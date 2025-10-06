@@ -1,20 +1,29 @@
-from emotion_app import emotion_detector, InvalidTextError
+import os
+import importlib
+import pytest
+
+# Ensure unit tests use the local fallback model
+os.environ.pop("WATSON_NLU_APIKEY", None)
+os.environ.pop("WATSON_NLU_URL", None)
+
+# Import from either "emotion_app" or fallback to "Final"
+try:
+    pkg = importlib.import_module("emotion_app")
+except ModuleNotFoundError:
+    pkg = importlib.import_module("Final")
+
+emotion_detector = getattr(pkg, "emotion_detector")
+InvalidTextError = getattr(pkg, "InvalidTextError")
 
 
 def test_invalid_text_raises():
-    try:
+    with pytest.raises(InvalidTextError):
         emotion_detector("")
-        assert False, "Expected InvalidTextError"
-    except InvalidTextError:
-        assert True
 
 
 def test_fallback_model_scores_exist():
-    # With no credentials, fallback model will run. We only assert presence of keys.
-    result = emotion_detector("I am happy and full of joy, nothing to fear.")
-    assert result.dominant_emotion in {"joy", "fear", "anger", "disgust", "sadness"}
-    assert 0.0 <= result.joy <= 1.0
-    assert 0.0 <= result.sadness <= 1.0
-    assert 0.0 <= result.anger <= 1.0
-    assert 0.0 <= result.fear <= 1.0
-    assert 0.0 <= result.disgust <= 1.0
+    res = emotion_detector("I am happy and full of joy, nothing to fear.")
+    assert res.dominant_emotion in {"joy", "fear", "anger", "disgust", "sadness"}
+    for key in ["joy", "sadness", "anger", "fear", "disgust"]:
+        val = getattr(res, key)
+        assert 0.0 <= val <= 1.0
