@@ -1,4 +1,4 @@
-"""Flask server for the Emotion Detector project."""
+""Flask server for the Emotion Detector project."""
 from __future__ import annotations
 
 import os
@@ -8,12 +8,21 @@ from flask import Flask, jsonify, render_template_string, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from emotion_app import (
-    emotion_detector,
-    format_emotions,
-    InvalidTextError,
-    ServiceUnavailableError,
-)
+# Support either a package named "emotion_app" or "Final"
+try:
+    from emotion_app import (
+        emotion_detector,
+        format_emotions,
+        InvalidTextError,
+        ServiceUnavailableError,
+    )
+except ImportError:  # fallback to "Final" package name
+    from Final import (
+        emotion_detector,
+        format_emotions,
+        InvalidTextError,
+        ServiceUnavailableError,
+    )
 
 load_dotenv()
 
@@ -78,7 +87,7 @@ def detect() -> tuple[Dict[str, Any], int]:
         return jsonify({"error": str(exc)}), 400
     except ServiceUnavailableError as exc:
         return jsonify({"error": str(exc)}), 503
-    except Exception as exc:  # unexpected
+    except Exception as exc:
         return jsonify({"error": f"Internal server error: {exc}"}), 500
 
 
