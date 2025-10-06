@@ -1,5 +1,11 @@
+import os
 import json
-from server import app
+
+# Ensure unit tests use the local fallback model
+os.environ.pop("WATSON_NLU_APIKEY", None)
+os.environ.pop("WATSON_NLU_URL", None)
+
+from server import app  # noqa: E402
 
 
 def test_post_emotion_detector_ok():
