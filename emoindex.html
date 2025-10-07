@@ -40,15 +40,17 @@
         color:var(--ink);width:36px;height:36px;border-radius:10px;cursor:pointer;
         display:grid;place-items:center;font-weight:800
       }
-      .grid{display:grid;gap:1.25rem;grid-template-columns:1.4fr .9fr}
-      @media (max-width: 960px){ .grid{grid-template-columns:1fr} }
+      h1{font-size:1.8rem;margin:.25rem 0 1rem 0}
+      .grid{display:grid;gap:1.25rem;grid-template-columns:1.15fr .85fr}
+      @media (max-width: 980px){ .grid{grid-template-columns:1fr} }
+
       .card{
         background:linear-gradient(180deg, var(--glass), var(--glass-2));
         border:1px solid var(--border); border-radius:var(--radius);
         box-shadow:var(--shadow); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
         padding:1.25rem;
       }
-      h1{font-size:1.8rem;margin:.25rem 0 1rem 0}
+
       label{display:block;font-weight:600;margin-bottom:.5rem}
       textarea{
         width:100%;min-height:200px;resize:vertical;background:#0a0f1a;color:var(--ink);
@@ -62,17 +64,19 @@
       }
       .status{font-size:.95rem}
       .status.err{color:#fca5a5}
+      .emojiInline{font-size:1.6rem;display:flex;gap:.35rem;align-items:center;min-height:1.6rem}
+
+      /* Right column panels */
+      .panelTitle{margin:.25rem 0 1rem 0;font-weight:700}
       .kv{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
       .pill{padding:.55rem .7rem;border:1px solid var(--border);border-radius:12px;background:#0a0f1a;font-weight:600}
       .value{min-width:4.5rem;text-align:right;background:#04070f;border:1px solid #0f172a;padding:.55rem .7rem;border-radius:12px;font-variant-numeric:tabular-nums}
       .hr{height:1px;background:var(--border);margin:1rem 0}
-      .emojiBox{
-        display:flex;align-items:center;gap:.5rem;margin-left:.4rem;
-        font-size:1.8rem
-      }
-      .meta{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem;margin-top:.75rem}
+      .meta{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
       .meta .label{color:var(--muted)}
+
       footer{margin-top:2rem;color:var(--muted);text-align:center;font-size:.9rem}
+
       /* Modal */
       .overlay{
         position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
@@ -111,39 +115,40 @@
       <h1>Emotion Detector</h1>
 
       <section class="grid">
+        <!-- Left: input and inline emoji result -->
         <div class="card">
           <label for="text">Text</label>
           <textarea id="text" placeholder="Type a short passage. For example: I am grateful and excited to begin something new today."></textarea>
           <div class="row">
             <button id="analyze" class="btn">Analyze</button>
+            <span id="emojiInline" class="emojiInline" aria-live="polite">🤔</span>
             <span id="status" class="status" aria-live="polite"></span>
           </div>
         </div>
 
-        <div class="card">
-          <h3 style="margin:.25rem 0 1rem 0">Summary</h3>
-          <div class="kv">
-            <div class="pill">Anger</div>    <div class="value" id="v-anger">0.000</div>
-            <div class="pill">Disgust</div>  <div class="value" id="v-disgust">0.000</div>
-            <div class="pill">Fear</div>     <div class="value" id="v-fear">0.000</div>
-            <div class="pill">Joy</div>      <div class="value" id="v-joy">0.000</div>
-            <div class="pill">Sadness</div>  <div class="value" id="v-sadness">0.000</div>
-            <div class="pill">Passion</div>  <div class="value" id="v-passion">0.000</div>
-            <div class="pill">Surprise</div> <div class="value" id="v-surprise">0.000</div>
+        <!-- Right: two stacked panels -->
+        <div>
+          <div class="card" style="margin-bottom:1.25rem">
+            <div class="panelTitle">Analysis</div>
+            <div class="kv">
+              <div class="pill">Anger</div>    <div class="value" id="v-anger">0.000</div>
+              <div class="pill">Disgust</div>  <div class="value" id="v-disgust">0.000</div>
+              <div class="pill">Fear</div>     <div class="value" id="v-fear">0.000</div>
+              <div class="pill">Joy</div>      <div class="value" id="v-joy">0.000</div>
+              <div class="pill">Sadness</div>  <div class="value" id="v-sadness">0.000</div>
+              <div class="pill">Passion</div>  <div class="value" id="v-passion">0.000</div>
+              <div class="pill">Surprise</div> <div class="value" id="v-surprise">0.000</div>
+            </div>
           </div>
 
-          <div class="hr"></div>
-
-          <div class="meta">
-            <div class="label">Dominant</div> <div class="value" id="v-dominant">N/A</div>
-            <div class="label">Emotion</div>  <div class="value" id="v-emotion">N/A</div>
-            <div class="label">Blended</div>  <div class="value" id="v-blended">N/A</div>
-            <div class="label">Confidence</div> <div class="value" id="v-confidence">0.000</div>
-          </div>
-
-          <div class="row" style="margin-top:.9rem">
-            <div class="pill">Emoji</div>
-            <div id="emojiBox" class="emojiBox" aria-live="polite">🤔</div>
+          <div class="card">
+            <div class="panelTitle">Results</div>
+            <div class="meta">
+              <div class="label">Dominant</div>   <div class="value" id="v-dominant">N/A</div>
+              <div class="label">Emotion</div>    <div class="value" id="v-emotion">N/A</div>
+              <div class="label">Blended</div>    <div class="value" id="v-blended">N/A</div>
+              <div class="label">Confidence</div> <div class="value" id="v-confidence">0.000</div>
+            </div>
           </div>
         </div>
       </section>
@@ -157,11 +162,11 @@
         <h2 id="modalTitle">About In tuned</h2>
         <p class="muted">Description:</p>
         <p>
-          A simple reflection tool that lets you write current thoughts to help you process how you feel in the moment. This is a helper and should be used as such.
+          A simple reflection tool that lets you write current thoughts to help you process how you feel in the moment. Use it as a helper, not as advice.
         </p>
         <p class="muted" style="margin-top:.6rem">How it works:</p>
         <p>
-          Type your thoughts and the text is analyzed across seven core emotions on a continuous scale. The app selects a dominant core and also produces a final two emotion label that best matches the mixture. The goal is to support self reflection, not to provide advice.
+          Your text is analyzed across seven core emotions on a continuous scale. We select a dominant core and also compute a final two emotion label that best matches the mixture. The goal is clarity and self reflection.
         </p>
         <div class="actions">
           <button id="closeModal" class="ghost">Done</button>
@@ -186,7 +191,7 @@
         confidence: $('v-confidence'),
       };
 
-      const emojiBox = $('emojiBox');
+      const emojiInline = $('emojiInline');
 
       function setStatus(text, isError=false){
         const s = $('status');
@@ -222,9 +227,9 @@
           fields.emotion.textContent          = data.emotion || 'N/A';
           fields.confidence.textContent       = fmt(parseFloat(data.confidence || 0));
 
-          // Emoji
+          // Emoji near the Analyze button
           const em = Array.isArray(data.emoji) ? data.emoji : [];
-          emojiBox.textContent = em.length ? em.join(' ') : '🤔';
+          emojiInline.textContent = em.length ? em.join(' ') : '🤔';
 
           setStatus('');
         }catch(err){
@@ -236,7 +241,7 @@
               fields[k].textContent = '0.000';
             }
           }
-          emojiBox.textContent = '🤔';
+          emojiInline.textContent = '🤔';
         }
       });
 
