@@ -1,211 +1,236 @@
-<!doctype html>
+!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Emotion Detector</title>
-    <meta name="description" content="Simple IBM Watson style emotion detector UI driven by a Flask API." />
+    <meta name="description" content="Elegant UI for a Flask-based Emotion Detector." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-      :root {
-        --bg: #f6f7fb;
-        --card: #ffffff;
-        --text: #111827;
-        --muted: #6b7280;
-        --primary: #2563eb;
-        --primary-press: #1e40af;
-        --ok: #16a34a;
-        --err: #b91c1c;
-        --border: #e5e7eb;
-        --shadow: 0 10px 18px rgba(0,0,0,.08);
-        --radius: 14px;
+      :root{
+        --bg-1:#0f172a;
+        --bg-2:#111827;
+        --glass:#0b1220cc;
+        --glass-2:#0b1220bf;
+        --ink:#e5e7eb;
+        --muted:#9ca3af;
+        --accent:#60a5fa;
+        --accent-2:#93c5fd;
+        --border:rgba(255,255,255,.08);
+        --glow:0 10px 30px rgba(99, 102, 241, .25);
+        --shadow:0 8px 28px rgba(2,6,23,.35);
+        --radius:16px;
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0;
+        font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        color:var(--ink);
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #1f2a44 0%, transparent 60%),
+          radial-gradient(1200px 600px at 110% 10%, #1b2540 0%, transparent 55%),
+          linear-gradient(180deg, var(--bg-1), var(--bg-2));
       }
 
-      * { box-sizing: border-box; }
-      html, body { height: 100%; }
-      body {
-        margin: 0;
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        background: radial-gradient(1200px 600px at 10% -10%, #e8eeff 0%, transparent 60%), var(--bg);
-        color: var(--text);
+      .wrap{max-width:1100px;margin:0 auto;padding:2.5rem 1.25rem 4rem}
+
+      /* Hero */
+      .hero{
+        display:flex;align-items:center;justify-content:space-between;gap:1.5rem;margin-bottom:1.5rem
+      }
+      .brand{
+        display:flex;align-items:center;gap:.9rem
+      }
+      .logo{
+        width:44px;height:44px;border-radius:12px;
+        background: radial-gradient(120% 120% at 30% 20%, #3b82f6, #7c3aed 60%, #0ea5e9 100%);
+        box-shadow:var(--glow);
+      }
+      h1{font-size:2rem;letter-spacing:.2px;margin:0 0 .25rem 0}
+      .sub{color:var(--muted);margin:0}
+
+      /* Grid */
+      .grid{display:grid;gap:1.25rem;grid-template-columns:1.4fr .9fr}
+      @media (max-width: 960px){ .grid{grid-template-columns:1fr} }
+
+      /* Cards */
+      .card{
+        background:linear-gradient(180deg, var(--glass), var(--glass-2));
+        border:1px solid var(--border);
+        border-radius:var(--radius);
+        box-shadow:var(--shadow);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        padding:1.25rem;
       }
 
-      .wrap {
-        max-width: 960px; margin: 4rem auto; padding: 0 1rem;
+      /* Form */
+      label{display:block;font-weight:600;margin-bottom:.5rem}
+      textarea{
+        width:100%;min-height:180px;resize:vertical;
+        background:#0a0f1a;border:1px solid var(--border);color:var(--ink);
+        border-radius:14px;padding:1rem;outline:none;font-size:1rem;line-height:1.5;
+        transition:border-color .15s, box-shadow .15s;
+      }
+      textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.2)}
+
+      .row{display:flex;align-items:center;gap:.9rem;margin-top:1rem}
+      .btn{
+        appearance:none;border:none;cursor:pointer;
+        padding:.85rem 1.15rem;border-radius:12px;
+        font-weight:700;letter-spacing:.2px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color:#0b1220;box-shadow:var(--glow);transition:transform .04s ease;
+      }
+      .btn:active{transform:translateY(1px)}
+      .btn[disabled]{opacity:.6;cursor:not-allowed}
+
+      .hint{color:var(--muted);font-size:.95rem;margin-top:.25rem}
+
+      /* Summary */
+      h3{margin:.25rem 0 1rem 0;font-size:1.05rem}
+      .kv{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
+      .pill{
+        padding:.55rem .7rem;border:1px solid var(--border);border-radius:12px;background:#0a0f1a;font-weight:600
+      }
+      .value{
+        min-width:4.5rem;text-align:right;
+        background:#04070f;border:1px solid #0f172a;padding:.55rem .7rem;border-radius:12px;
+        font-variant-numeric: tabular-nums;
+        transition: color .2s, transform .12s;
+      }
+      .value.flash{color:#93c5fd;transform:scale(1.03)}
+
+      /* Raw */
+      .result{
+        margin-top:1rem;
+        font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        background:#050810;border:1px solid #0f172a;border-radius:14px;min-height:160px;padding:1rem;overflow:auto
       }
 
-      header h1 {
-        font-size: 2.25rem; margin: 0 0 .25rem 0; letter-spacing: .2px;
-      }
-      header p {
-        margin: 0; color: var(--muted);
-      }
+      .status{font-size:.95rem;margin-left:.25rem}
+      .status.ok{color:#86efac}
+      .status.err{color:#fca5a5}
 
-      .grid {
-        margin-top: 1.25rem;
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 1.25rem;
-      }
-      @media (min-width: 960px) {
-        .grid { grid-template-columns: 2fr 1fr; }
-      }
-
-      .card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow);
-        padding: 1.25rem;
-      }
-
-      label {
-        display: block; font-weight: 600; margin-bottom: .5rem;
-      }
-      textarea {
-        width: 100%; min-height: 160px; resize: vertical;
-        padding: .9rem 1rem; border-radius: 12px;
-        border: 1px solid var(--border); outline: none;
-        font-size: 1rem; line-height: 1.45;
-        background: #fff;
-      }
-      textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
-
-      .row { display: flex; gap: .75rem; align-items: center; margin-top: .9rem; }
-      .btn {
-        appearance: none; border: none; cursor: pointer;
-        padding: .7rem 1rem; border-radius: 12px;
-        background: var(--primary); color: #fff; font-weight: 600;
-      }
-      .btn:active { background: var(--primary-press); }
-      .btn[disabled] { opacity: .6; cursor: not-allowed; }
-
-      .hint { color: var(--muted); font-size: .95rem; margin-top: .5rem; }
-
-      .result {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-        background: #0b1220; color: #e5edf9;
-        border-radius: 12px; padding: 1rem; overflow: auto; min-height: 140px;
-        border: 1px solid #111827;
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
-      }
-
-      .kv { display: grid; grid-template-columns: 1fr auto; gap: .5rem 1rem; }
-      .kv div { padding: .4rem .6rem; border-radius: 10px; background: #f9fafb; border: 1px solid var(--border); }
-      .kv .em { font-weight: 700; }
-
-      .status { margin-top: .5rem; font-size: .95rem; }
-      .status.ok { color: var(--ok); }
-      .status.err { color: var(--err); }
-
-      footer { margin-top: 2rem; color: var(--muted); font-size: .9rem; text-align: center; }
-      code { background: #eef2ff; padding: .1rem .35rem; border-radius: 6px; }
-      .spacer { height: .35rem; }
+      footer{margin-top:2rem;color:var(--muted);text-align:center;font-size:.9rem}
+      code{background:#0a1020;border:1px solid var(--border);padding:.15rem .4rem;border-radius:8px}
     </style>
   </head>
   <body>
     <div class="wrap">
-      <header>
-        <h1>Emotion Detector</h1>
-        <p>Analyze text and view emotion scores returned by the Flask API.</p>
-      </header>
+      <div class="hero">
+        <div class="brand">
+          <div class="logo" aria-hidden="true"></div>
+          <div>
+            <h1>Emotion Detector</h1>
+            <p class="sub">Elegant interface backed by your Flask API.</p>
+          </div>
+        </div>
+      </div>
 
       <section class="grid">
+        <!-- Left card -->
         <div class="card">
           <label for="text">Text</label>
-          <textarea id="text" placeholder="Type some text, for example: I am happy and excited to start a new project today."></textarea>
-
+          <textarea id="text" placeholder="Type a short passage, for example: I am grateful and excited to begin something new today."></textarea>
           <div class="row">
             <button id="analyze" class="btn">Analyze</button>
             <span id="status" class="status" aria-live="polite"></span>
           </div>
-
           <p class="hint">
             The UI calls <code>POST /emotionDetector</code> with a JSON body
-            <code>{"text": "..."}</code>. The API returns five scores and the dominant emotion.
+            <code>{"text":"..."}</code>. The API returns five scores and the dominant emotion.
           </p>
-        </div>
-
-        <div class="card">
-          <h3 style="margin-top:0">Summary</h3>
-          <div class="kv" id="summary">
-            <div>anger</div><div class="em" id="s-anger">0.000</div>
-            <div>disgust</div><div class="em" id="s-disgust">0.000</div>
-            <div>fear</div><div class="em" id="s-fear">0.000</div>
-            <div>joy</div><div class="em" id="s-joy">0.000</div>
-            <div>sadness</div><div class="em" id="s-sadness">0.000</div>
-            <div>dominant_emotion</div><div class="em" id="s-dominant">n/a</div>
-          </div>
-
-          <div class="spacer"></div>
 
           <h3>Raw response</h3>
           <pre class="result" id="out">{}</pre>
         </div>
+
+        <!-- Right card -->
+        <div class="card">
+          <h3 style="margin-top:.25rem">Summary</h3>
+          <div class="kv">
+            <div class="pill">anger</div>   <div class="value" id="v-anger">0.000</div>
+            <div class="pill">disgust</div> <div class="value" id="v-disgust">0.000</div>
+            <div class="pill">fear</div>    <div class="value" id="v-fear">0.000</div>
+            <div class="pill">joy</div>     <div class="value" id="v-joy">0.000</div>
+            <div class="pill">sadness</div> <div class="value" id="v-sadness">0.000</div>
+            <div class="pill">dominant</div><div class="value" id="v-dominant">n/a</div>
+          </div>
+        </div>
       </section>
 
-      <footer>
-        <span>Final Project • Flask API • Unit tests ready</span>
-      </footer>
+      <footer>Final Project • Polished UI</footer>
     </div>
 
     <script>
-      const el = (id) => document.getElementById(id);
+      const $ = (id)=>document.getElementById(id);
+      const fields = {
+        anger: $('v-anger'),
+        disgust: $('v-disgust'),
+        fear: $('v-fear'),
+        joy: $('v-joy'),
+        sadness: $('v-sadness'),
+        dominant_emotion: $('v-dominant'),
+      };
 
-      function setStatus(msg, ok = true) {
-        const st = el('status');
-        st.textContent = msg || '';
-        st.className = 'status ' + (ok ? 'ok' : 'err');
+      function flash(el){
+        el.classList.add('flash');
+        setTimeout(()=>el.classList.remove('flash'),180);
+      }
+      function fmt(v){ return typeof v === 'number' ? v.toFixed(3) : String(v ?? ''); }
+
+      function setStatus(text, ok=true){
+        const s = $('status');
+        s.textContent = text || '';
+        s.className = 'status ' + (ok ? 'ok' : 'err');
       }
 
-      function setSummary(data) {
-        const num = (v) => typeof v === 'number' ? v.toFixed(3) : String(v ?? '');
-        el('s-anger').textContent = num(data.anger);
-        el('s-disgust').textContent = num(data.disgust);
-        el('s-fear').textContent = num(data.fear);
-        el('s-joy').textContent = num(data.joy);
-        el('s-sadness').textContent = num(data.sadness);
-        el('s-dominant').textContent = data.dominant_emotion ?? '';
-      }
-
-      async function analyze() {
-        const btn = el('analyze');
-        const text = el('text').value;
-
+      async function analyze(){
+        const btn = $('analyze');
+        const text = $('text').value.trim();
         btn.disabled = true;
-        setStatus('Analyzing, please wait...', true);
-        el('out').textContent = '';
+        setStatus('Analyzing...');
+        $('out').textContent = '';
 
-        try {
-          const resp = await fetch('/emotionDetector', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+        try{
+          const res = await fetch('/emotionDetector',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ text })
           });
+          const data = await res.json();
 
-          const data = await resp.json();
+          if(!res.ok) throw new Error(data?.error || 'Request failed');
 
-          if (!resp.ok) {
-            throw new Error(data && data.error ? data.error : 'Request failed');
-          }
+          $('out').textContent = JSON.stringify(data, null, 2);
 
-          el('out').textContent = JSON.stringify(data, null, 2);
-          setSummary(data);
-          setStatus('Done', true);
-        } catch (err) {
-          setStatus(err && err.message ? err.message : 'Unexpected error', false);
-          el('out').textContent = '';
-          setSummary({
-            anger: 0, disgust: 0, fear: 0, joy: 0, sadness: 0, dominant_emotion: 'n/a'
+          // Update summary values with a tiny flash effect
+          ['anger','disgust','fear','joy','sadness'].forEach(k=>{
+            const el = fields[k];
+            el.textContent = fmt(data[k]);
+            flash(el);
           });
-        } finally {
+          fields.dominant_emotion.textContent = data.dominant_emotion || 'n/a';
+          flash(fields.dominant_emotion);
+
+          setStatus('Done', true);
+        }catch(err){
+          setStatus(err?.message || 'Unexpected error', false);
+          ['anger','disgust','fear','joy','sadness'].forEach(k=>fields[k].textContent='0.000');
+          fields.dominant_emotion.textContent='n/a';
+          $('out').textContent='';
+        }finally{
           btn.disabled = false;
         }
       }
 
-      el('analyze').addEventListener('click', analyze);
-      el('text').addEventListener('keydown', (e) => {
-        if (e.metaKey && e.key === 'Enter') analyze();
-        if (e.ctrlKey && e.key === 'Enter') analyze();
+      $('analyze').addEventListener('click', analyze);
+      $('text').addEventListener('keydown', e=>{
+        if((e.metaKey||e.ctrlKey) && e.key === 'Enter') analyze();
       });
     </script>
   </body>
