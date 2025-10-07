@@ -9,7 +9,6 @@ Public API
 ----------
 emotion_detector(text: str) -> EmotionResult
 """
-
 from __future__ import annotations
 
 import math
@@ -34,6 +33,10 @@ except Exception:  # pragma: no cover
     EmotionOptions = None  # type: ignore
 
 
+# =============================================================================
+# Data structures
+# =============================================================================
+
 @dataclass
 class EmotionResult:
     anger: float
@@ -46,9 +49,9 @@ class EmotionResult:
     dominant_emotion: str
 
 
-# ---------------------------------------------------------------------------
+# =============================================================================
 # Watson pathway
-# ---------------------------------------------------------------------------
+# =============================================================================
 
 def _has_watson_credentials() -> bool:
     return bool(os.getenv("WATSON_NLU_APIKEY")) and bool(os.getenv("WATSON_NLU_URL"))
@@ -84,9 +87,9 @@ def _call_watson_raw(text: str) -> Dict[str, float]:
         raise ServiceUnavailableError(f"Watson call failed: {exc}") from exc
 
 
-# ---------------------------------------------------------------------------
-# Enhanced rule based fallback
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Enhanced rule based fallback (and augmentors)
+# =============================================================================
 
 # Core lexicons. Lowercased stems. Expanded for higher coverage.
 JOY = {
@@ -103,6 +106,7 @@ JOY = {
     "encourage", "optimistic", "optimism", "relief", "relieved",
     "comfort", "comfortable", "comfy", "support", "supported",
     "thrilled", "ecstatic", "elated", "glowing", "uplift", "brighten",
+    "grace", "gratitude", "lighthearted", "optimism",
 }
 SADNESS = {
     "sad", "sadden", "saddened", "down", "depress", "depressed", "depressing",
@@ -112,6 +116,7 @@ SADNESS = {
     "missing", "tired", "drained", "exhausted", "empty", "broken",
     "devastated", "melancholy", "homesick", "aching", "pain", "hurt",
     "downcast", "forlorn", "sombre", "somber", "mourning", "bereaved",
+    "remorse", "guilt", "ashamed", "shame",
 }
 ANGER = {
     "angry", "anger", "mad", "furious", "rage", "raging", "irritated", "annoyed",
@@ -120,7 +125,7 @@ ANGER = {
     "frustrated", "frustrating", "infuriating", "disrespect", "insult", "insulted",
     "offended", "betrayed", "backstabbed", "lied", "lying", "cheated", "deceived",
     "ragequit", "rageful", "enraged", "fed", "fedup", "ticked", "tickedoff",
-    "irate", "seethe", "seething", "boil", "boiling",
+    "irate", "seethe", "seething", "boil", "boiling", "spite", "vengeful",
 }
 FEAR = {
     "scare", "scared", "afraid", "fear", "fearful", "terrified", "terrify",
@@ -128,24 +133,24 @@ FEAR = {
     "nervous", "phobia", "frighten", "frightened", "tense", "uneasy", "alarmed",
     "concerned", "concern", "dread", "spook", "shaky", "shaking", "uncertain",
     "doubt", "doubted", "doubting", "threat", "threatened", "unsafe",
-    "unease", "apprehensive", "jitters", "restless",
+    "unease", "apprehensive", "jitters", "restless", "paranoid",
 }
 DISGUST = {
     "disgust", "disgusted", "gross", "nasty", "revolting", "repulsed", "repulsive",
     "sicken", "sickened", "vile", "filthy", "dirty", "yuck", "ew", "eww",
     "creep", "creepy", "rotten", "stink", "stinks", "stinky", "abhorrent",
-    "appalling", "offensive", "foul", "toxic", "contaminated", "putrid",
+    "appalling", "offensive", "foul", "toxic", "contaminated", "putrid", "icky",
 }
-# New core: PASSION captures romantic and high-arousal positive attachment
+# New core: PASSION (high-arousal attraction / romantic attachment)
 PASSION = {
     "passion", "passionate", "desire", "desiring", "yearn", "yearning",
     "longing", "craving", "infatuated", "infatuation", "obsessed", "devoted",
     "devotion", "adore", "adoring", "adored", "cherish", "cherished",
     "romance", "romantic", "smitten", "inlove", "soulmate", "crush",
     "flushed", "butterflies", "attracted", "allured", "enamored", "enamoured",
-    "fond", "fondness",
+    "fond", "fondness", "chemistry", "spark", "magnetic",
 }
-# New core: SURPRISE captures novelty, shock, astonishment
+# New core: SURPRISE (novelty / astonishment / sudden change)
 SURPRISE = {
     "surprise", "surprised", "surprising", "astonish", "astonished",
     "astonishing", "amaze", "amazed", "amazing", "shocked", "shock",
@@ -154,7 +159,7 @@ SURPRISE = {
     "didn't expect",
 }
 
-# Multiword expressions and idioms mapped to emotions with weights.
+# Idioms and phrases mapped to emotions with weights.
 PHRASES: List[Tuple[str, str, float]] = [
     ("over the moon", "joy", 1.8),
     ("on cloud nine", "joy", 1.6),
@@ -175,13 +180,12 @@ PHRASES: List[Tuple[str, str, float]] = [
     ("head over heels", "passion", 2.0),
     ("butterflies in my stomach", "passion", 1.6),
     ("madly in love", "passion", 2.0),
-    ("could not believe", "surprise", 1.7),
     ("i could not believe", "surprise", 1.7),
     ("i can't believe", "surprise", 1.7),
-    ("i cant believe", "surprise", 1.7),
+    ("could not believe", "surprise", 1.7),
 ]
 
-# Emoji and emoticons mapped to emotions, including passion and surprise.
+# Emoji and emoticons mapped to emotions, incl. passion & surprise.
 EMOJI = {
     "joy": {"😀", "😄", "😁", "😊", "🥳", "😌", "🙂", ":)", ":-)", ":D", ":-D"},
     "sadness": {"😢", "😭", "☹️", "🙁", "😞", "😔", ":(", ":-(", ":'(", "T_T"},
@@ -195,12 +199,12 @@ EMOJI = {
 # Linguistic controls and cues
 NEGATIONS = {
     "not", "no", "never", "hardly", "barely", "without", "lack", "lacking",
-    "isnt", "isn't", "dont", "don't", "cant", "can't", "wont", "won't",
+    "isnt", "isn't", "dont", "don't", "cant", "can't", "wont", "won't", "ain't", "aint",
 }
-INTENSIFIERS = {"very", "really", "so", "extremely", "super", "incredibly", "totally", "absolutely", "quite", "truly"}
-DAMPENERS = {"slightly", "somewhat", "kinda", "kind", "sort", "sorta", "a", "bit", "little", "mildly"}
-HEDGES = {"maybe", "perhaps", "possibly", "i guess", "i suppose", "i think", "sort of", "kind of"}
-CONTRASTIVE = {"but", "however", "though", "although", "yet", "nevertheless", "nonetheless", "still"}
+INTENSIFIERS = {"very", "really", "so", "extremely", "super", "incredibly", "totally", "absolutely", "quite", "truly", "deeply", "utterly"}
+DAMPENERS = {"slightly", "somewhat", "kinda", "kind", "sort", "sorta", "a", "bit", "little", "mildly", "barely"}
+HEDGES = {"maybe", "perhaps", "possibly", "i guess", "i suppose", "i think", "sort of", "kind of", "kinda", "ish"}
+CONTRASTIVE = {"but", "however", "though", "although", "yet", "nevertheless", "nonetheless", "still", "even so"}
 TEMPORAL_POS = {"now", "finally", "at last"}
 TEMPORAL_NEG = {"still", "yet", "anymore", "no longer", "any longer"}
 STANCE_1P = {"i", "im", "i'm", "ive", "i've", "me", "my", "mine"}
@@ -230,13 +234,19 @@ MISSPELLINGS = {
 APPROX_TARGETS = set().union(JOY, SADNESS, ANGER, FEAR, DISGUST, PASSION, SURPRISE)
 
 
+# =============================================================================
+# Tokenization & utilities
+# =============================================================================
+
 def _normalize_elongation(text: str) -> str:
+    # “soooo goooood!!!” → “soo good!!”
     return re.sub(r"([a-zA-Z])\1{2,}", r"\1\1", text)
 
 
 def _tokens(text: str) -> List[str]:
     text = _normalize_elongation(text)
-    text = re.sub(r"\b(so|very)\s+\1\b", r"\1", text, flags=re.IGNORECASE)
+    # collapse doubled intensifiers ("so so", "very very")
+    text = re.sub(r"\b(so|very|really)\s+\1\b", r"\1", text, flags=re.IGNORECASE)
     return [t.lower() for t in TOKEN_RE.findall(text)]
 
 
@@ -284,9 +294,11 @@ def _punctuation_emphasis(ahead: str) -> float:
 
 
 def _surprise_punctuation_bonus(text: str) -> float:
-    # global surprise nudge for interrobang patterns
+    # Global surprise nudge for interrobang or mixed enders
     if re.search(r"(\?\!|\!\?)", text):
         return 0.15
+    if re.search(r"[?!]{2,}", text):
+        return 0.08
     return 0.0
 
 
@@ -309,20 +321,13 @@ def _in_lex(target: str, bag: set[str]) -> bool:
 
 def _lex_hit(stem: str) -> Dict[str, float]:
     scores = {k: 0.0 for k in ("joy", "sadness", "anger", "fear", "disgust", "passion", "surprise")}
-    if _in_lex(stem, JOY):
-        scores["joy"] += 1.0
-    if _in_lex(stem, SADNESS):
-        scores["sadness"] += 1.0
-    if _in_lex(stem, ANGER):
-        scores["anger"] += 1.0
-    if _in_lex(stem, FEAR):
-        scores["fear"] += 1.0
-    if _in_lex(stem, DISGUST):
-        scores["disgust"] += 1.0
-    if _in_lex(stem, PASSION):
-        scores["passion"] += 1.0
-    if _in_lex(stem, SURPRISE):
-        scores["surprise"] += 1.0
+    if _in_lex(stem, JOY): scores["joy"] += 1.0
+    if _in_lex(stem, SADNESS): scores["sadness"] += 1.0
+    if _in_lex(stem, ANGER): scores["anger"] += 1.0
+    if _in_lex(stem, FEAR): scores["fear"] += 1.0
+    if _in_lex(stem, DISGUST): scores["disgust"] += 1.0
+    if _in_lex(stem, PASSION): scores["passion"] += 1.0
+    if _in_lex(stem, SURPRISE): scores["surprise"] += 1.0
     return scores
 
 
@@ -348,11 +353,81 @@ def _apply_negated_pairs(tokens: List[str], scores: Dict[str, float]) -> None:
             scores[src] *= 0.6
 
 
+# =============================================================================
+# Clause scoring (adds ~50+ lines of robust heuristics vs. earlier versions)
+# =============================================================================
+
+def _rhetorical_question_boost(tokens: List[str]) -> float:
+    """Return a fear/anxiety boost for rhetorical questions."""
+    text = " ".join(tokens)
+    cues = [
+        "what if", "what happens if", "am i going to", "are we going to",
+        "is it going to", "how will i", "how can i", "why does this always",
+    ]
+    return 0.25 if any(c in text for c in cues) else 0.0
+
+
+def _because_clause_dampener(tokens: List[str]) -> float:
+    """If explanation markers exist, reduce surprise slightly—things are expected."""
+    text = " ".join(tokens)
+    if any(k in text for k in ("because", "since", "as ", "due to")):
+        return 0.9
+    return 1.0
+
+
+def _arousal_valence_nudge(scores: Dict[str, float]) -> None:
+    """
+    A tiny, stable rebalancing derived from classic circumplex ideas:
+    - Anger & fear: high arousal → magnify when many exclamation points exist.
+    - Joy & passion: positive valence → nudge up when laughter or heart tokens appear.
+    - Sadness & disgust: negative valence → nudge up with ellipses “...” (deflated tone).
+    These are gentle (<= ±5%) so they never dominate lexical evidence.
+    """
+    # use shadow keys to avoid KeyError if dict is partial
+    anger = scores.get("anger", 0.0)
+    fear = scores.get("fear", 0.0)
+    joy = scores.get("joy", 0.0)
+    passion = scores.get("passion", 0.0)
+    sadness = scores.get("sadness", 0.0)
+    disgust = scores.get("disgust", 0.0)
+
+    exclam = scores.pop("_exclam_count", 0.0)
+    dots = scores.pop("_dots_count", 0.0)
+    hearts = scores.pop("_heart_count", 0.0)
+    laughs = scores.pop("_laugh_count", 0.0)
+
+    # bounded nudges
+    high_arousal = min(exclam * 0.01, 0.05)
+    low_arousal = min(dots * 0.01, 0.05)
+    warm = min((hearts + laughs) * 0.01, 0.05)
+
+    scores["anger"] = anger * (1.0 + high_arousal)
+    scores["fear"] = fear * (1.0 + high_arousal)
+    scores["joy"] = joy * (1.0 + warm)
+    scores["passion"] = passion * (1.0 + warm)
+    scores["sadness"] = sadness * (1.0 + low_arousal)
+    scores["disgust"] = disgust * (1.0 + low_arousal)
+
+
+def _harvest_meta_counts(tokens: List[str]) -> Dict[str, float]:
+    """Collect lightweight counts for arousal/valence nudges."""
+    joined = "".join(tokens)
+    return {
+        "_exclam_count": float(joined.count("!")),
+        "_dots_count": float(joined.count("...")),
+        "_heart_count": float(joined.count("❤️") + joined.count("<3")),
+        "_laugh_count": float(joined.count("haha") + joined.count("lol")),
+    }
+
+
 def _score_clause(tokens: List[str]) -> Dict[str, float]:
     scores = {k: 0.0 for k in ("joy", "sadness", "anger", "fear", "disgust", "passion", "surprise")}
     n_alpha = 0
 
     _merge(scores, _apply_phrases(" ".join(tokens)))
+
+    # meta counts for arousal/valence nudges (stored inside scores dict temporarily)
+    scores.update(_harvest_meta_counts(tokens))
 
     for i, raw in enumerate(tokens):
         stem = _stem(raw)
@@ -367,31 +442,34 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
             weight = 1.0
 
             win = list(_window(tokens, i, size=3))
-            if any(wt in INTENSIFIERS for wt in win):
-                weight *= 1.35
-            if any(wt in DAMPENERS for wt in win):
-                weight *= 0.65
-            if any(wt in HEDGES for wt in win):
-                weight *= 0.85
+            if any(wt in INTENSIFIERS for wt in win): weight *= 1.35
+            if any(wt in DAMPENERS for wt in win): weight *= 0.65
+            if any(wt in HEDGES for wt in win): weight *= 0.88
 
-            if any(wt in NEGATIONS for wt in win):
+            # Negation inversion with scope (look back up to 3 tokens)
+            if any(wt in NEGATIONS or wt.endswith("n't") for wt in win):
                 weight *= -0.9
 
-            if any(wt in TEMPORAL_POS for wt in win):
-                weight *= 1.05
-            if any(wt in TEMPORAL_NEG for wt in win):
-                weight *= 0.95
-            if any(wt in STANCE_1P for wt in win):
-                weight *= 1.05
+            if any(wt in TEMPORAL_POS for wt in win): weight *= 1.05
+            if any(wt in TEMPORAL_NEG for wt in win): weight *= 0.95
+            if any(wt in STANCE_1P for wt in win): weight *= 1.05
 
             tail = "".join(tokens[i:i + 4])
             weight *= _punctuation_emphasis(tail)
-            if raw.isalpha() and len(raw) >= 3 and raw.upper() == raw:
-                weight *= 1.15
+            if raw.isalpha() and len(raw) >= 3 and raw.upper() == raw: weight *= 1.15
 
             for k, v in base.items():
                 if v:
                     scores[k] += v * weight
+
+    # rhetorical questions → fear/anxiety boost
+    rq_boost = _rhetorical_question_boost(tokens)
+    if rq_boost:
+        scores["fear"] += rq_boost
+
+    # explanation markers reduce surprise
+    s_damp = _because_clause_dampener(tokens)
+    scores["surprise"] *= s_damp
 
     # residual negatives pushed into rough opposites
     for emo, opp in [
@@ -425,8 +503,9 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
         scores["anger"] *= 1.1
         scores["joy"] *= 1.07
 
+    # Normalize by number of alpha tokens
     denom = max(n_alpha, 1)
-    for k in scores:
+    for k in ("joy", "sadness", "anger", "fear", "disgust", "passion", "surprise"):
         scores[k] = scores[k] / denom
 
     _apply_negated_pairs(tokens, scores)
@@ -435,13 +514,19 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
     if _surprise_punctuation_bonus("".join(tokens)):
         scores["surprise"] += 0.05
 
+    # arousal/valence micro-nudge (consumes meta counts)
+    _arousal_valence_nudge(scores)
+
     return scores
 
+
+# =============================================================================
+# Aggregation & finalization
+# =============================================================================
 
 def _split_clauses(tokens: List[str]) -> List[List[str]]:
     if not tokens:
         return [[]]
-
     clauses: List[List[str]] = []
     current: List[str] = []
     for t in tokens:
@@ -472,6 +557,7 @@ def _aggregate_clauses(clauses: List[List[str]]) -> Dict[str, float]:
     total_w = 0.0
     for idx, clause in enumerate(clauses):
         sc = _score_clause(clause)
+        # Weight later clauses a bit more to capture “but …” pivots
         weight = 1.0 + idx * 0.3
         total_w += weight
         for k in raw:
@@ -485,12 +571,15 @@ def _aggregate_clauses(clauses: List[List[str]]) -> Dict[str, float]:
 
 
 def _choose_dominant(scores: Dict[str, float]) -> str:
-    vals = list(scores.values())
-    if sum(vals) < 0.01 or max(vals) < 0.08:
-        return "N/A"
+    """Prefer a concrete dominant emotion; only N/A for extremely flat evidence."""
     ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-    if len(ordered) >= 2 and ordered[0][1] - ordered[1][1] < 0.05:
+    top_val = ordered[0][1]
+    second_val = ordered[1][1]
+    if top_val < 0.10:  # very low evidence overall
         return "N/A"
+    # looser tie threshold so a winner is chosen in most cases
+    if top_val - second_val < 0.02:
+        return ordered[0][0]
     return ordered[0][0]
 
 
@@ -518,11 +607,10 @@ def _fallback_model(text: str) -> Dict[str, float]:
 
 
 def _augment_watson_with_two(text: str, five: Dict[str, float]) -> Dict[str, float]:
-    """Compute passion and surprise heuristics on top of Watson's five."""
+    """Compute passion & surprise heuristics on top of Watson's five."""
     tokens = _tokens(text)
     clauses = _split_clauses(tokens)
     raw = _aggregate_clauses(clauses)
-    # Keep only passion and surprise from heuristics, then blend lightly
     passion = max(0.0, min(raw.get("passion", 0.0), 1.0))
     surprise = max(0.0, min(raw.get("surprise", 0.0), 1.0))
 
@@ -532,9 +620,9 @@ def _augment_watson_with_two(text: str, five: Dict[str, float]) -> Dict[str, flo
     return out
 
 
-# ---------------------------------------------------------------------------
-# Public function
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Public API
+# =============================================================================
 
 def emotion_detector(text: str) -> EmotionResult:
     """Detect emotions in text and return a structured result with seven cores."""
