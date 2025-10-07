@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Emotion Detector</title>
+    <title>In tuned</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -25,8 +25,21 @@
           radial-gradient(1200px 600px at 110% 10%, #1b2540 0%, transparent 55%),
           linear-gradient(180deg, var(--bg-1), var(--bg-2));
       }
-      .wrap{max-width:1100px;margin:0 auto;padding:2.5rem 1.25rem 4rem}
-      h1{font-size:2rem;margin:0 0 1rem 0}
+      .wrap{max-width:1100px;margin:0 auto;padding:2rem 1.25rem 3rem}
+      .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+      .brand{display:flex;align-items:center;gap:.6rem}
+      .logo{
+        width:34px;height:34px;border-radius:10px;
+        background:linear-gradient(135deg, var(--accent), var(--accent-2));
+        display:grid;place-items:center;box-shadow:var(--shadow)
+      }
+      .logo svg{width:20px;height:20px}
+      .title{font-size:1.35rem;font-weight:800;letter-spacing:.2px}
+      .help{
+        appearance:none;border:1px solid var(--border);background:#0a0f1a;
+        color:var(--ink);width:36px;height:36px;border-radius:10px;cursor:pointer;
+        display:grid;place-items:center;font-weight:800
+      }
       .grid{display:grid;gap:1.25rem;grid-template-columns:1.4fr .9fr}
       @media (max-width: 960px){ .grid{grid-template-columns:1fr} }
       .card{
@@ -35,9 +48,10 @@
         box-shadow:var(--shadow); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
         padding:1.25rem;
       }
+      h1{font-size:1.8rem;margin:.25rem 0 1rem 0}
       label{display:block;font-weight:600;margin-bottom:.5rem}
       textarea{
-        width:100%;min-height:180px;resize:vertical;background:#0a0f1a;color:var(--ink);
+        width:100%;min-height:200px;resize:vertical;background:#0a0f1a;color:var(--ink);
         border:1px solid var(--border);border-radius:14px;padding:1rem;font-size:1rem;line-height:1.5;outline:none
       }
       textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.2)}
@@ -47,15 +61,53 @@
         font-weight:700;background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#0b1220
       }
       .status{font-size:.95rem}
-      .status.ok{color:#86efac} .status.err{color:#fca5a5}
+      .status.err{color:#fca5a5}
       .kv{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
       .pill{padding:.55rem .7rem;border:1px solid var(--border);border-radius:12px;background:#0a0f1a;font-weight:600}
       .value{min-width:4.5rem;text-align:right;background:#04070f;border:1px solid #0f172a;padding:.55rem .7rem;border-radius:12px;font-variant-numeric:tabular-nums}
+      .hr{height:1px;background:var(--border);margin:1rem 0}
+      .emojiBox{
+        display:flex;align-items:center;gap:.5rem;margin-left:.4rem;
+        font-size:1.8rem
+      }
+      .meta{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem;margin-top:.75rem}
+      .meta .label{color:var(--muted)}
       footer{margin-top:2rem;color:var(--muted);text-align:center;font-size:.9rem}
+      /* Modal */
+      .overlay{
+        position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
+        align-items:center;justify-content:center;padding:1rem;z-index:40
+      }
+      .overlay.show{display:flex}
+      .modal{
+        width:min(640px, 100%);background:#0b1220;border:1px solid var(--border);
+        border-radius:16px;box-shadow:var(--shadow);padding:1.25rem 1.25rem 1rem
+      }
+      .modal h2{margin:.2rem 0 .6rem 0;font-size:1.2rem}
+      .modal p{color:var(--ink);line-height:1.6;margin:.4rem 0}
+      .modal .muted{color:var(--muted)}
+      .modal .actions{display:flex;justify-content:flex-end;margin-top:1rem}
+      .ghost{
+        appearance:none;border:1px solid var(--border);background:#0a0f1a;color:var(--ink);
+        padding:.6rem .9rem;border-radius:10px;cursor:pointer
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
+      <div class="topbar">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">
+            <!-- simple heart wave mark -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0b1220" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 21s-5.5-3.6-8.2-6.3A5.2 5.2 0 0 1 11 5.5L12 7l1-1.5a5.2 5.2 0 0 1 7.2 9.2C17.5 17.4 12 21 12 21z"/>
+            </svg>
+          </div>
+          <div class="title">In tuned</div>
+        </div>
+        <button id="helpBtn" class="help" aria-label="About In tuned">?</button>
+      </div>
+
       <h1>Emotion Detector</h1>
 
       <section class="grid">
@@ -71,39 +123,81 @@
         <div class="card">
           <h3 style="margin:.25rem 0 1rem 0">Summary</h3>
           <div class="kv">
-            <div class="pill">Anger</div>   <div class="value" id="v-anger">0.000</div>
-            <div class="pill">Disgust</div> <div class="value" id="v-disgust">0.000</div>
-            <div class="pill">Fear</div>    <div class="value" id="v-fear">0.000</div>
-            <div class="pill">Joy</div>     <div class="value" id="v-joy">0.000</div>
-            <div class="pill">Sadness</div> <div class="value" id="v-sadness">0.000</div>
-            <div class="pill">Dominant</div><div class="value" id="v-dominant">N/A</div>
+            <div class="pill">Anger</div>    <div class="value" id="v-anger">0.000</div>
+            <div class="pill">Disgust</div>  <div class="value" id="v-disgust">0.000</div>
+            <div class="pill">Fear</div>     <div class="value" id="v-fear">0.000</div>
+            <div class="pill">Joy</div>      <div class="value" id="v-joy">0.000</div>
+            <div class="pill">Sadness</div>  <div class="value" id="v-sadness">0.000</div>
+            <div class="pill">Passion</div>  <div class="value" id="v-passion">0.000</div>
+            <div class="pill">Surprise</div> <div class="value" id="v-surprise">0.000</div>
+          </div>
+
+          <div class="hr"></div>
+
+          <div class="meta">
+            <div class="label">Dominant</div> <div class="value" id="v-dominant">N/A</div>
+            <div class="label">Emotion</div>  <div class="value" id="v-emotion">N/A</div>
+            <div class="label">Blended</div>  <div class="value" id="v-blended">N/A</div>
+            <div class="label">Confidence</div> <div class="value" id="v-confidence">0.000</div>
+          </div>
+
+          <div class="row" style="margin-top:.9rem">
+            <div class="pill">Emoji</div>
+            <div id="emojiBox" class="emojiBox" aria-live="polite">🤔</div>
           </div>
         </div>
       </section>
 
-      <footer>Final Project • Polished UI</footer>
+      <footer>© 2025 In tuned. All rights reserved.</footer>
+    </div>
+
+    <!-- Help modal -->
+    <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal">
+        <h2 id="modalTitle">About In tuned</h2>
+        <p class="muted">Description:</p>
+        <p>
+          A simple reflection tool that lets you write current thoughts to help you process how you feel in the moment. This is a helper and should be used as such.
+        </p>
+        <p class="muted" style="margin-top:.6rem">How it works:</p>
+        <p>
+          Type your thoughts and the text is analyzed across seven core emotions on a continuous scale. The app selects a dominant core and also produces a final two emotion label that best matches the mixture. The goal is to support self reflection, not to provide advice.
+        </p>
+        <div class="actions">
+          <button id="closeModal" class="ghost">Done</button>
+        </div>
+      </div>
     </div>
 
     <script>
       const $ = (id)=>document.getElementById(id);
+
       const fields = {
         anger: $('v-anger'),
         disgust: $('v-disgust'),
         fear: $('v-fear'),
         joy: $('v-joy'),
         sadness: $('v-sadness'),
+        passion: $('v-passion'),
+        surprise: $('v-surprise'),
         dominant_emotion: $('v-dominant'),
+        blended_emotion: $('v-blended'),
+        emotion: $('v-emotion'),
+        confidence: $('v-confidence'),
       };
 
-      function setStatus(text, ok=true){
+      const emojiBox = $('emojiBox');
+
+      function setStatus(text, isError=false){
         const s = $('status');
         s.textContent = text || '';
-        s.className = 'status ' + (ok ? 'ok' : 'err');
+        s.className = 'status' + (isError ? ' err' : '');
       }
       function fmt(v){ return typeof v === 'number' ? v.toFixed(3) : String(v ?? ''); }
 
       $('analyze').addEventListener('click', async ()=>{
         const text = $('text').value.trim();
+        if (!text) { setStatus('Please enter some text.'); return; }
         setStatus('Analyzing...');
         try{
           const res = await fetch('/emotionDetector', {
@@ -113,20 +207,45 @@
           const data = await res.json();
           if(!res.ok) throw new Error(data?.error || 'Request failed');
 
-          fields.anger.textContent   = fmt(data.anger);
-          fields.disgust.textContent = fmt(data.disgust);
-          fields.fear.textContent    = fmt(data.fear);
-          fields.joy.textContent     = fmt(data.joy);
-          fields.sadness.textContent = fmt(data.sadness);
-          fields.dominant_emotion.textContent = data.dominant_emotion || 'N/A';
+          // Core scores
+          fields.anger.textContent    = fmt(data.anger);
+          fields.disgust.textContent  = fmt(data.disgust);
+          fields.fear.textContent     = fmt(data.fear);
+          fields.joy.textContent      = fmt(data.joy);
+          fields.sadness.textContent  = fmt(data.sadness);
+          fields.passion.textContent  = fmt(data.passion ?? 0);
+          fields.surprise.textContent = fmt(data.surprise ?? 0);
 
-          setStatus('Done', true);
+          // Metadata
+          fields.dominant_emotion.textContent = data.dominant_emotion || 'N/A';
+          fields.blended_emotion.textContent  = data.blended_emotion || 'N/A';
+          fields.emotion.textContent          = data.emotion || 'N/A';
+          fields.confidence.textContent       = fmt(parseFloat(data.confidence || 0));
+
+          // Emoji
+          const em = Array.isArray(data.emoji) ? data.emoji : [];
+          emojiBox.textContent = em.length ? em.join(' ') : '🤔';
+
+          setStatus('');
         }catch(err){
-          setStatus(err?.message || 'Unexpected error', false);
-          fields.anger.textContent = fields.disgust.textContent = fields.fear.textContent =
-          fields.joy.textContent = fields.sadness.textContent = '0.000';
-          fields.dominant_emotion.textContent = 'N/A';
+          setStatus(err?.message || 'Unexpected error', true);
+          for (const k of Object.keys(fields)) {
+            if (k === 'dominant_emotion' || k === 'blended_emotion' || k === 'emotion') {
+              fields[k].textContent = 'N/A';
+            } else {
+              fields[k].textContent = '0.000';
+            }
+          }
+          emojiBox.textContent = '🤔';
         }
+      });
+
+      // Modal logic
+      const overlay = $('overlay');
+      $('helpBtn').addEventListener('click', ()=> overlay.classList.add('show'));
+      $('closeModal').addEventListener('click', ()=> overlay.classList.remove('show'));
+      overlay.addEventListener('click', (e)=>{
+        if (e.target === overlay) overlay.classList.remove('show');
       });
     </script>
   </body>
