@@ -1,48 +1,87 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>In tuned</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
+      /* ===================== THEME TOKENS ===================== */
       :root{
         --ink:#e5e7eb; --muted:#9ca3af;
         --bg-1:#0f172a; --bg-2:#111827;
         --glass:#0b1220cc; --glass-2:#0b1220bf;
+        --surface:#0a0f1a; --surface-2:#04070f;
         --accent:#60a5fa; --accent-2:#93c5fd;
-        --border:rgba(255,255,255,.08); --shadow:0 8px 28px rgba(2,6,23,.35);
+        --border:rgba(255,255,255,.08);
+        --shadow:0 10px 30px rgba(2,6,23,.35);
         --radius:16px;
+      }
+      [data-theme="light"]{
+        --ink:#0b1220; --muted:#475569;
+        --bg-1:#f3f5f9; --bg-2:#e9eef7;
+        --glass:#ffffffd8; --glass-2:#ffffffcc;
+        --surface:#ffffff; --surface-2:#eef2f8;
+        --accent:#2563eb; --accent-2:#60a5fa;
+        --border:rgba(2,6,23,.12);
+        --shadow:0 10px 30px rgba(2,6,23,.12);
       }
       *{box-sizing:border-box} html,body{height:100%}
       body{
         margin:0; color:var(--ink);
         font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
         background:
-          radial-gradient(1200px 600px at 10% -10%, #1f2a44 0%, transparent 60%),
-          radial-gradient(1200px 600px at 110% 10%, #1b2540 0%, transparent 55%),
+          radial-gradient(1200px 600px at 10% -10%, #1f2a4433 0%, transparent 60%),
+          radial-gradient(1200px 600px at 110% 10%, #1b254033 0%, transparent 55%),
           linear-gradient(180deg, var(--bg-1), var(--bg-2));
       }
-      .wrap{max-width:1100px;margin:0 auto;padding:2rem 1.25rem 3rem}
+      [data-theme="light"] body{
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #a9c6ff4d 0%, transparent 60%),
+          radial-gradient(1200px 600px at 110% 10%, #b7d0ff4d 0%, transparent 55%),
+          linear-gradient(180deg, var(--bg-1), var(--bg-2));
+      }
+
+      /* ===================== LAYOUT ===================== */
+      .wrap{max-width:1128px;margin:0 auto;padding:2.25rem 1.25rem 3.25rem}
       .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
-      .brand{display:flex;align-items:center;gap:.6rem}
+      .brand{display:flex;align-items:center;gap:.7rem}
       .logo{
-        width:34px;height:34px;border-radius:10px;
-        background:linear-gradient(135deg, var(--accent), var(--accent-2));
+        width:36px;height:36px;border-radius:11px;
+        background:conic-gradient(from 210deg, var(--accent), var(--accent-2));
         display:grid;place-items:center;box-shadow:var(--shadow)
       }
-      .logo svg{width:20px;height:20px}
-      .title{font-size:1.35rem;font-weight:800;letter-spacing:.2px}
-      .help{
-        appearance:none;border:1px solid var(--border);background:#0a0f1a;
-        color:var(--ink);width:36px;height:36px;border-radius:10px;cursor:pointer;
-        display:grid;place-items:center;font-weight:800
+      .mark{
+        width:17px;height:17px;border-radius:50%;
+        background:linear-gradient(135deg, #fff, #ffffffc9);
+        position:relative; box-shadow:0 0 24px 6px rgba(255,255,255,.45), inset 0 0 10px rgba(255,255,255,.65);
       }
-      h1{font-size:1.8rem;margin:.25rem 0 1rem 0}
-      .grid{display:grid;gap:1.25rem;grid-template-columns:1.15fr .85fr}
+      [data-theme="light"] .mark{
+        background:#0b1a3a; box-shadow:0 0 18px 3px rgba(2,6,23,.22), inset 0 0 8px rgba(255,255,255,.2);
+      }
+      .title{font-size:1.38rem;font-weight:800;letter-spacing:.2px}
+      .actions{display:flex;align-items:center;gap:.6rem}
+      .help{
+        appearance:none;border:1px solid var(--border);background:var(--surface);
+        color:var(--ink);width:36px;height:36px;border-radius:10px;cursor:pointer;
+        display:grid;place-items:center;font-weight:800;box-shadow:var(--shadow)
+      }
+      .modeDot{
+        width:18px;height:18px;border-radius:50%;border:1px solid var(--border);
+        display:inline-block;cursor:pointer;box-shadow:0 0 16px 4px rgba(255,255,255,.35);
+        background:#fff;
+      }
+      [data-theme="light"] .modeDot{
+        background:#0b1a3a; box-shadow:0 0 14px 2px rgba(2,6,23,.22);
+      }
+
+      h1{font-size:1.9rem;margin:.25rem 0 1.1rem 0}
+      .grid{display:grid;gap:1.25rem;grid-template-columns:1fr 1fr}
       @media (max-width: 980px){ .grid{grid-template-columns:1fr} }
+
+      .stack{display:grid;gap:1.25rem}
 
       .card{
         background:linear-gradient(180deg, var(--glass), var(--glass-2));
@@ -51,66 +90,71 @@
         padding:1.25rem;
       }
 
-      label{display:block;font-weight:600;margin-bottom:.5rem}
+      /* ===================== FORM ===================== */
+      label{display:block;font-weight:700;margin-bottom:.6rem}
       textarea{
-        width:100%;min-height:200px;resize:vertical;background:#0a0f1a;color:var(--ink);
+        width:100%;min-height:220px;resize:vertical;background:var(--surface);color:var(--ink);
         border:1px solid var(--border);border-radius:14px;padding:1rem;font-size:1rem;line-height:1.5;outline:none
       }
       textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.2)}
       .row{display:flex;align-items:center;gap:.9rem;margin-top:1rem}
       .btn{
         appearance:none;border:none;cursor:pointer;padding:.85rem 1.15rem;border-radius:12px;
-        font-weight:700;background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#0b1220
+        font-weight:800;background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#0b1220
       }
       .status{font-size:.95rem}
-      .status.err{color:#fca5a5}
+      .status.err{color:#f43f5e}
       .emojiInline{font-size:1.6rem;display:flex;gap:.35rem;align-items:center;min-height:1.6rem}
 
-      .panelTitle{margin:.25rem 0 1rem 0;font-weight:700}
+      /* ===================== PANELS ===================== */
+      .panelTitle{margin:.25rem 0 1rem 0;font-weight:800;letter-spacing:.15px}
       .kv{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
-      .pill{padding:.55rem .7rem;border:1px solid var(--border);border-radius:12px;background:#0a0f1a;font-weight:600}
-      .value{min-width:4.5rem;text-align:right;background:#04070f;border:1px solid #0f172a;padding:.55rem .7rem;border-radius:12px;font-variant-numeric:tabular-nums}
+      .pill{padding:.55rem .7rem;border:1px solid var(--border);border-radius:12px;background:var(--surface);font-weight:700}
+      .value{min-width:4.5rem;text-align:right;background:var(--surface-2);border:1px solid var(--border);padding:.55rem .7rem;border-radius:12px;font-variant-numeric:tabular-nums}
       .meta{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
-      .meta .label{color:var(--muted)}
+      .meta .label{color:var(--muted);font-weight:600}
 
-      footer{margin-top:2rem;color:var(--muted);text-align:center;font-size:.9rem}
+      footer{margin-top:2.2rem;color:var(--muted);text-align:center;font-size:.9rem}
 
+      /* ===================== MODAL ===================== */
       .overlay{
         position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
         align-items:center;justify-content:center;padding:1rem;z-index:40
       }
       .overlay.show{display:flex}
       .modal{
-        width:min(640px, 100%);background:#0b1220;border:1px solid var(--border);
+        width:min(640px, 100%);background:var(--surface);border:1px solid var(--border);
         border-radius:16px;box-shadow:var(--shadow);padding:1.25rem 1.25rem 1rem
       }
       .modal h2{margin:.2rem 0 .6rem 0;font-size:1.2rem}
-      .modal p{color:var(--ink);line-height:1.6;margin:.4rem 0}
+      .modal p{color:var(--ink);line-height:1.65;margin:.45rem 0}
       .modal .muted{color:var(--muted)}
       .modal .actions{display:flex;justify-content:flex-end;margin-top:1rem}
       .ghost{
-        appearance:none;border:1px solid var(--border);background:#0a0f1a;color:var(--ink);
+        appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--ink);
         padding:.6rem .9rem;border-radius:10px;cursor:pointer
       }
     </style>
   </head>
   <body>
     <div class="wrap">
+      <!-- Top bar -->
       <div class="topbar">
-        <div class="brand">
-          <div class="logo" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#0b1220" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 21s-5.5-3.6-8.2-6.3A5.2 5.2 0 0 1 11 5.5L12 7l1-1.5a5.2 5.2 0 0 1 7.2 9.2C17.5 17.4 12 21 12 21z"/>
-            </svg>
-          </div>
+        <div class="brand" aria-label="In tuned home">
+          <div class="logo" aria-hidden="true"><div class="mark" aria-hidden="true"></div></div>
           <div class="title">In tuned</div>
         </div>
-        <button id="helpBtn" class="help" aria-label="About In tuned">?</button>
+        <div class="actions">
+          <span id="modeDot" class="modeDot" title="Toggle light/dark mode" aria-label="Toggle theme" role="button" tabindex="0"></span>
+          <button id="helpBtn" class="help" aria-label="About In tuned">?</button>
+        </div>
       </div>
 
       <h1>Emotion Detector</h1>
 
+      <!-- Symmetrical two-column grid -->
       <section class="grid">
+        <!-- Left: Input -->
         <div class="card">
           <label for="text">Text</label>
           <textarea id="text" placeholder="Type a short passage. For example: I am grateful and excited to begin something new today."></textarea>
@@ -121,8 +165,9 @@
           </div>
         </div>
 
-        <div>
-          <div class="card" style="margin-bottom:1.25rem">
+        <!-- Right: Analysis + Results stacked -->
+        <div class="stack">
+          <div class="card">
             <div class="panelTitle">Analysis</div>
             <div class="kv">
               <div class="pill">Anger</div>    <div class="value" id="v-anger">0.000</div>
@@ -148,16 +193,21 @@
       <footer>© 2025 In tuned. All rights reserved.</footer>
     </div>
 
+    <!-- Modal -->
     <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal">
         <h2 id="modalTitle">About In tuned</h2>
         <p class="muted">Description:</p>
         <p>
-          A simple reflection tool that lets you write current thoughts to help you process how you feel in the moment. Use it as a helper, not as advice.
+          A simple reflection tool to help you process how you feel in the moment.
+          Write your thoughts; treat the output as a prompt for self-awareness,
+          not advice.
         </p>
-        <p class="muted" style="margin-top:.6rem">How it works:</p>
+        <p class="muted" style="margin-top:.65rem">How it works:</p>
         <p>
-          Your text is analyzed across seven core emotions on a continuous scale. The app selects a dominant core and also produces a final two emotion label that best matches the mixture. The goal is clarity and self reflection.
+          Your text is analyzed across seven core emotions (Anger, Disgust, Fear, Joy,
+          Sadness, Passion, Surprise). We show the dominant core and a final single-label
+          emotion derived from the mixture to best match the current state you expressed.
         </p>
         <div class="actions">
           <button id="closeModal" class="ghost">Done</button>
@@ -181,6 +231,12 @@
       };
 
       const emojiInline = $('emojiInline');
+
+      const titleCase = (s) => {
+        if (!s || typeof s !== 'string') return 'N/A';
+        if (s.toUpperCase() === s) return s; // N/A, etc.
+        return s.charAt(0).toUpperCase() + s.slice(1);
+      };
 
       function setStatus(text, isError=false){
         const s = $('status');
@@ -210,11 +266,11 @@
           fields.passion.textContent  = fmt(data.passion ?? 0);
           fields.surprise.textContent = fmt(data.surprise ?? 0);
 
-          // Results
-          fields.dominant_emotion.textContent = data.dominant_emotion || 'N/A';
-          fields.emotion.textContent          = data.emotion || 'N/A';
+          // Capitalize result labels
+          fields.dominant_emotion.textContent = titleCase(data.dominant_emotion || 'N/A');
+          fields.emotion.textContent          = titleCase(data.emotion || 'N/A');
 
-          // Emoji near the Analyze button. One or two depending on the result.
+          // Emoji near Analyze
           const em = Array.isArray(data.emoji) ? data.emoji : [];
           emojiInline.textContent = em.length ? em.join(' ') : '🤔';
 
@@ -232,13 +288,28 @@
         }
       });
 
-      // Modal
+      // Modal open/close
       const overlay = $('overlay');
       $('helpBtn').addEventListener('click', ()=> overlay.classList.add('show'));
       $('closeModal').addEventListener('click', ()=> overlay.classList.remove('show'));
-      overlay.addEventListener('click', (e)=>{
-        if (e.target === overlay) overlay.classList.remove('show');
-      });
+      overlay.addEventListener('click', (e)=>{ if (e.target === overlay) overlay.classList.remove('show'); });
+
+      // Theme toggle (glowing dot)
+      const modeDot = $('modeDot');
+      const root = document.documentElement;
+      const setTheme = (t)=> root.setAttribute('data-theme', t);
+      const toggleTheme = ()=> {
+        const now = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        setTheme(now);
+        try { localStorage.setItem('in-tuned-theme', now); } catch {}
+      };
+      modeDot.addEventListener('click', toggleTheme);
+      modeDot.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTheme(); }});
+      // restore last theme
+      try {
+        const saved = localStorage.getItem('in-tuned-theme');
+        if (saved) setTheme(saved);
+      } catch {}
     </script>
   </body>
 </html>
