@@ -1,26 +1,22 @@
-"""High fidelity local emotion detector.
+"""High fidelity local emotion detector with robust offline heuristics.
 
-Design goals
-------------
-1) Work fully offline with no external services.
-2) Handle short phrases, partial sentences, typos, and emoji.
-3) Consider common linguistic phenomena:
+Goals
+1) Fully offline. No external services required.
+2) Handle short phrases, partial sentences, typos, emoji, and emphasis.
+3) Model common linguistic phenomena:
    - negation scope
    - intensifiers and dampeners
-   - contrastive pivots such as "but" and "however"
-   - emphasis from capitalization, repetition, and punctuation
-   - basic sarcasm cues such as "yeah right", "as if"
-   - stance from first person pronouns
-4) Provide stable scores in [0, 1] and a sensible dominant emotion.
-5) Keep the public API the same as before.
+   - contrastive pivots such as "but", "however"
+   - temporal cues such as "now", "still", "no longer"
+   - emphasis from capitalization, repetition, punctuation
+   - sarcasm and hedging cues
+   - first person stance
+   - phrase idioms and multiword expressions
+4) Produce stable scores in [0, 1] and a sensible dominant emotion.
+5) Keep the public API unchanged for the rest of the app.
 
-If IBM Watson NLU credentials are supplied through environment variables,
-the Watson pathway is used automatically. Otherwise this file provides
-a robust rule based fallback.
-
-Public API
-----------
-emotion_detector(text: str) -> EmotionResult
+If IBM Watson NLU credentials are present, Watson is used automatically.
+Otherwise this file provides an advanced rule based fallback.
 """
 
 from __future__ import annotations
@@ -28,12 +24,14 @@ from __future__ import annotations
 import math
 import os
 import re
+import difflib
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Dict, Iterable, List, Tuple
 
 from .errors import InvalidTextError, ServiceUnavailableError
 
-# Optional Watson imports kept for completeness. If not configured, we use the fallback.
+# Optional Watson imports for environments that have credentials.
 try:  # pragma: no cover
     from ibm_watson import NaturalLanguageUnderstandingV1
     from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
@@ -97,40 +95,72 @@ def _call_watson(text: str) -> Dict[str, float]:
 # Enhanced rule based fallback
 # ---------------------------------------------------------------------------
 
-# Core lexicons. Compact but broad. All lowercased stems.
+# Core lexicons. Lowercased stems. Expanded for higher coverage.
 JOY = {
     "love", "loved", "loving", "like", "liked", "likes",
-    "happy", "joy", "joyful", "cheer", "cheerful", "content", "contented",
-    "excite", "excited", "exciting", "glad", "delight", "delighted", "delightful",
-    "pleased", "satisfy", "satisfied", "awesome", "amazing", "wonderful", "fantastic",
-    "great", "good", "grateful", "blessed", "peaceful", "calm", "serene", "hopeful",
-    "win", "won", "success", "proud", "smile", "laugh", "yay", "woohoo", "hurray",
-    "enjoy", "enjoyed", "enjoying", "fun", "cute", "beautiful", "brilliant",
+    "happy", "happi", "joy", "joyful", "cheer", "cheerful",
+    "content", "contented", "excite", "excited", "exciting",
+    "glad", "delight", "delighted", "delightful", "pleased",
+    "satisfy", "satisfied", "awesome", "amazing", "wonderful",
+    "fantastic", "great", "good", "grateful", "thankful",
+    "blessed", "peaceful", "calm", "serene", "hopeful",
+    "win", "won", "success", "proud", "smile", "laugh",
+    "yay", "woohoo", "hurray", "enjoy", "enjoyed", "enjoying",
+    "fun", "cute", "beautiful", "brilliant", "best", "perfect",
+    "encourage", "optimistic", "optimism", "relief", "relieved",
+    "comfort", "comfortable", "comfy", "support", "supported",
 }
 SADNESS = {
     "sad", "sadden", "saddened", "down", "depress", "depressed", "depressing",
-    "cry", "cried", "crying", "tearful", "teary", "lonely", "alone", "miserable",
-    "heartbroken", "sorrow", "grief", "blue", "hopeless", "helpless", "gloomy",
-    "lost", "regret", "regretful", "sorry", "miss", "missing", "tired", "drained",
+    "cry", "cried", "crying", "tear", "tearful", "teary", "lonely", "alone",
+    "miserable", "heartbroken", "sorrow", "grief", "blue", "hopeless",
+    "helpless", "gloomy", "lost", "regret", "regretful", "sorry", "miss",
+    "missing", "tired", "drained", "exhausted", "empty", "broken",
+    "devastated", "melancholy", "homesick", "aching", "pain", "hurt",
 }
 ANGER = {
     "angry", "anger", "mad", "furious", "rage", "raging", "irritated", "annoyed",
     "annoying", "upset", "hate", "hated", "hates", "hating", "outraged", "livid",
     "resentful", "hostile", "fume", "yell", "shout", "scream", "screaming",
     "frustrated", "frustrating", "infuriating", "disrespect", "insult", "insulted",
+    "offended", "betrayed", "backstabbed", "lied", "lying", "cheated", "deceived",
+    "ragequit", "rageful", "enraged", "fed", "fedup", "ticked", "tickedoff",
 }
 FEAR = {
     "scare", "scared", "afraid", "fear", "fearful", "terrified", "terrify",
     "anxious", "anxiety", "worry", "worried", "worrying", "panic", "panicked",
     "nervous", "phobia", "frighten", "frightened", "tense", "uneasy", "alarmed",
-    "concerned", "concern", "dread", "spook", "shaky", "shaking",
+    "concerned", "concern", "dread", "spook", "shaky", "shaking", "uncertain",
+    "doubt", "doubted", "doubting", "threat", "threatened", "unsafe",
 }
 DISGUST = {
     "disgust", "disgusted", "gross", "nasty", "revolting", "repulsed", "repulsive",
     "sicken", "sickened", "vile", "filthy", "dirty", "yuck", "ew", "eww",
-    "creep", "creepy", "rotten", "stink", "stinks", "stinky",
+    "creep", "creepy", "rotten", "stink", "stinks", "stinky", "abhorrent",
+    "appalling", "offensive", "foul", "toxic", "contaminated",
 }
 
+# Multiword expressions and idioms mapped to emotions with weights.
+PHRASES: List[Tuple[str, str, float]] = [
+    ("over the moon", "joy", 1.8),
+    ("on cloud nine", "joy", 1.6),
+    ("could not be happier", "joy", 1.8),
+    ("couldn't be happier", "joy", 1.8),
+    ("walking on air", "joy", 1.6),
+    ("in tears", "sadness", 1.4),
+    ("cry my eyes out", "sadness", 1.8),
+    ("heart is broken", "sadness", 1.8),
+    ("i feel empty", "sadness", 1.6),
+    ("boiling with rage", "anger", 1.9),
+    ("lost my temper", "anger", 1.6),
+    ("at my wits end", "anger", 1.4),
+    ("out of my mind with worry", "fear", 1.8),
+    ("sick to my stomach", "disgust", 1.6),
+    ("gives me the creeps", "disgust", 1.6),
+    ("creeps me out", "disgust", 1.6),
+]
+
+# Emoji and emoticons mapped to emotions.
 EMOJI = {
     "joy": {"😀", "😄", "😁", "😊", "😍", "🥳", "😌", "🙂", ":)", ":-)", ":D", ":-D", "<3"},
     "sadness": {"😢", "😭", "☹️", "🙁", "😞", "😔", ":(", ":-(", ":'(", "T_T"},
@@ -139,16 +169,29 @@ EMOJI = {
     "disgust": {"🤢", "🤮"},
 }
 
+# Linguistic controls
 NEGATIONS = {
-    "not", "no", "never", "hardly", "barely", "without",
+    "not", "no", "never", "hardly", "barely", "without", "lack", "lacking",
     "isnt", "isn't", "dont", "don't", "cant", "can't", "wont", "won't",
 }
-BOOSTERS = {"very", "really", "so", "extremely", "super", "incredibly", "totally", "absolutely", "quite"}
-DAMPENERS = {"slightly", "somewhat", "kinda", "kind", "sort", "sorta", "a", "bit", "little"}
-CONTRASTIVE = {"but", "however", "though", "although", "yet", "nevertheless", "nonetheless"}
-FIRST_PERSON = {"i", "im", "i'm", "ive", "i've", "me", "my", "mine"}
+INTENSIFIERS = {"very", "really", "so", "extremely", "super", "incredibly", "totally", "absolutely", "quite", "truly"}
+DAMPENERS = {"slightly", "somewhat", "kinda", "kind", "sort", "sorta", "a", "bit", "little", "mildly"}
+CONTRASTIVE = {"but", "however", "though", "although", "yet", "nevertheless", "nonetheless", "still"}
+TEMPORAL_POS = {"now", "finally", "at last"}
+TEMPORAL_NEG = {"still", "yet", "anymore", "no longer", "any longer"}
+STANCE_1P = {"i", "im", "i'm", "ive", "i've", "me", "my", "mine"}
 
 TOKEN_RE = re.compile(r"[a-zA-Z']+|[^\w\s]", re.UNICODE)
+
+# Misspelling map and approximate matching target vocab
+MISSPELLINGS = {
+    "hapy": "happy", "happpy": "happy", "happ": "happy",
+    "angy": "angry", "angree": "angry",
+    "discusting": "disgusting", "discust": "disgust",
+    "woried": "worried", "anxios": "anxious", "scarry": "scary",
+    "lonley": "lonely", "miserible": "miserable",
+}
+APPROX_TARGETS = set().union(JOY, SADNESS, ANGER, FEAR, DISGUST)
 
 
 def _normalize_elongation(text: str) -> str:
@@ -162,7 +205,6 @@ def _tokens(text: str) -> List[str]:
 
 
 def _stem(tok: str) -> str:
-    # Tiny stemmer for common suffixes
     if not tok.isalpha():
         return tok
     for suf in ("'s", "ing", "ed", "ly", "ness", "ful", "ment", "es", "s"):
@@ -176,19 +218,30 @@ def _window(tokens: List[str], i: int, size: int = 3) -> Iterable[str]:
     return tokens[start:i]
 
 
+@lru_cache(maxsize=4096)
+def _approx_correction(stem: str) -> str:
+    """Correct obvious typos with a small dictionary and fuzzy match fallback."""
+    if stem in APPROX_TARGETS:
+        return stem
+    if stem in MISSPELLINGS:
+        return MISSPELLINGS[stem]
+    # Fuzzy match among target stems. Cutoff keeps precision high.
+    matches = difflib.get_close_matches(stem, APPROX_TARGETS, n=1, cutoff=0.87)
+    return matches[0] if matches else stem
+
+
 def _emoji_boost(tok: str) -> Dict[str, float]:
     scores = {k: 0.0 for k in ("joy", "sadness", "anger", "fear", "disgust")}
     for emo, bag in EMOJI.items():
         if tok in bag:
-            scores[emo] += 1.2
+            scores[emo] += 1.3
     return scores
 
 
 def _punctuation_emphasis(ahead: str) -> float:
-    # more exclamation suggests higher arousal
     bangs = ahead.count("!")
     if bangs >= 3:
-        return 1.3
+        return 1.35
     if bangs == 2:
         return 1.2
     if bangs == 1:
@@ -198,7 +251,10 @@ def _punctuation_emphasis(ahead: str) -> float:
 
 def _sarcasm_cue(tokens: List[str]) -> bool:
     text = " ".join(tokens)
-    cues = ["yeah right", "as if", "sure buddy", "sure jan"]
+    cues = [
+        "yeah right", "as if", "sure buddy", "sure jan", "what a joy",
+        "great job", "so fun", "how lovely", "what a delight",
+    ]
     return any(c in text for c in cues)
 
 
@@ -222,10 +278,21 @@ def _merge(a: Dict[str, float], b: Dict[str, float], k: float = 1.0) -> None:
         a[key] += b.get(key, 0.0) * k
 
 
+def _apply_phrases(text_lower: str) -> Dict[str, float]:
+    out = {k: 0.0 for k in ("joy", "sadness", "anger", "fear", "disgust")}
+    for phrase, emo, w in PHRASES:
+        if phrase in text_lower:
+            out[emo] += w
+    return out
+
+
 def _score_clause(tokens: List[str]) -> Dict[str, float]:
     """Score a single clause of tokens."""
     scores = {k: 0.0 for k in ("joy", "sadness", "anger", "fear", "disgust")}
     n_alpha = 0
+
+    # Phrase level detection
+    _merge(scores, _apply_phrases(" ".join(tokens)))
 
     for i, raw in enumerate(tokens):
         stem = _stem(raw)
@@ -235,20 +302,31 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
         # Emoji and emoticons
         _merge(scores, _emoji_boost(raw))
 
-        # Lexical hit with local modifiers
+        # Lexical hit with local modifiers and typo correction
+        stem = _approx_correction(stem)
         base = _lex_hit(stem)
         if any(base.values()):
             weight = 1.0
 
-            w = list(_window(tokens, i, size=3))
-            if any(wt in BOOSTERS for wt in w):
+            win = list(_window(tokens, i, size=3))
+            if any(wt in INTENSIFIERS for wt in win):
                 weight *= 1.35
-            if any(wt in DAMPENERS for wt in w):
+            if any(wt in DAMPENERS for wt in win):
                 weight *= 0.65
-            if any(wt in NEGATIONS for wt in w):
+
+            # Negation inversion
+            if any(wt in NEGATIONS for wt in win):
                 weight *= -0.9
 
-            # Punctuation and capitals
+            # Temporal and stance nudges
+            if any(wt in TEMPORAL_POS for wt in win):
+                weight *= 1.05
+            if any(wt in TEMPORAL_NEG for wt in win):
+                weight *= 0.95
+            if any(wt in STANCE_1P for wt in win):
+                weight *= 1.05
+
+            # Punctuation and capitals emphasis
             tail = "".join(tokens[i:i + 4])
             weight *= _punctuation_emphasis(tail)
             if raw.isalpha() and len(raw) >= 3 and raw.upper() == raw:
@@ -259,24 +337,24 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
                 if v:
                     scores[k] += v * weight
 
-    # Negation inversion was already applied locally. Convert residual negatives.
+    # Residual negative contributions to opposite signals
     for emo, opp in [("joy", "sadness"), ("fear", "anger"), ("anger", "fear"), ("disgust", "joy"), ("sadness", "joy")]:
         if scores[emo] < 0:
             scores[opp] += abs(scores[emo]) * 0.6
             scores[emo] = 0.0
 
-    # Heuristic signals not tied to a single token
+    # Heuristic signals not tied to one token
     if "?" in tokens:
-        scores["fear"] += 0.2  # uncertainty often signals fear or worry
+        scores["fear"] += 0.2
     if any(p in tokens for p in ("!", "!!")):
-        scores["anger"] += 0.05  # mild arousal nudge
+        scores["anger"] += 0.05
 
-    # First person focus strengthens emotions slightly
-    if any(t in FIRST_PERSON for t in tokens):
+    # First person across the clause strengthens intensity slightly
+    if any(t in STANCE_1P for t in tokens):
         for k in scores:
             scores[k] *= 1.05
 
-    # Sarcasm lightly reduces positive signals
+    # Sarcasm reduces joy
     if _sarcasm_cue(tokens):
         scores["joy"] *= 0.6
 
@@ -289,13 +367,12 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
 
 
 def _split_clauses(tokens: List[str]) -> List[List[str]]:
-    """Split tokens by contrastive markers so that later clauses receive more weight."""
+    """Split tokens by contrastive markers so that later clauses get more weight."""
     if not tokens:
         return [[]]
 
     clauses: List[List[str]] = []
     current: List[str] = []
-
     for t in tokens:
         if t in CONTRASTIVE:
             if current:
@@ -309,13 +386,11 @@ def _split_clauses(tokens: List[str]) -> List[List[str]]:
 
 
 def _squash(x: float) -> float:
-    """Map unbounded x to [0, 1] smoothly."""
-    # logistic squash centered near 0 with slope tuned for small magnitudes
+    """Map unbounded x to [0, 1] smoothly with a logistic curve."""
     return 1.0 / (1.0 + math.exp(-4.0 * x))
 
 
 def _clamp_scores(raw: Dict[str, float]) -> Dict[str, float]:
-    # Scale and clamp to [0, 1]
     out = {}
     for k, v in raw.items():
         out[k] = max(0.0, min(_squash(v), 1.0))
@@ -328,8 +403,8 @@ def _aggregate_clauses(clauses: List[List[str]]) -> Dict[str, float]:
     total_w = 0.0
     for idx, clause in enumerate(clauses):
         sc = _score_clause(clause)
-        # Weight later clauses more to capture "but now I feel X"
-        weight = 1.0 + idx * 0.25
+        # Weight later clauses more to capture final sentiment shifts.
+        weight = 1.0 + idx * 0.3
         total_w += weight
         for k in raw:
             raw[k] += sc[k] * weight
@@ -342,7 +417,7 @@ def _aggregate_clauses(clauses: List[List[str]]) -> Dict[str, float]:
 
 
 def _choose_dominant(scores: Dict[str, float]) -> str:
-    """Pick a dominant emotion, or N/A if evidence is weak or tied."""
+    """Pick a dominant emotion or N/A when evidence is weak or tied."""
     vals = list(scores.values())
     if sum(vals) < 0.01 or max(vals) < 0.08:
         return "N/A"
@@ -353,18 +428,22 @@ def _choose_dominant(scores: Dict[str, float]) -> str:
 
 
 def _fallback_model(text: str) -> Dict[str, float]:
+    # Pre pass for phrase detection on the raw text
     tokens = _tokens(text)
     if not tokens:
         return {k: 0.0 for k in ("anger", "disgust", "fear", "joy", "sadness")}
 
     clauses = _split_clauses(tokens)
     raw = _aggregate_clauses(clauses)
+
+    # Final clamp to [0, 1]
+    clamped = _clamp_scores(raw)
     return {
-        "anger": float(_clamp_scores({"anger": raw["anger"]})["anger"]),
-        "disgust": float(_clamp_scores({"disgust": raw["disgust"]})["disgust"]),
-        "fear": float(_clamp_scores({"fear": raw["fear"]})["fear"]),
-        "joy": float(_clamp_scores({"joy": raw["joy"]})["joy"]),
-        "sadness": float(_clamp_scores({"sadness": raw["sadness"]})["sadness"]),
+        "anger": float(clamped["anger"]),
+        "disgust": float(clamped["disgust"]),
+        "fear": float(clamped["fear"]),
+        "joy": float(clamped["joy"]),
+        "sadness": float(clamped["sadness"]),
     }
 
 
@@ -373,7 +452,11 @@ def _fallback_model(text: str) -> Dict[str, float]:
 # ---------------------------------------------------------------------------
 
 def emotion_detector(text: str) -> EmotionResult:
-    """Detect emotions in text and return a structured result."""
+    """Detect emotions in text and return a structured result.
+
+    Raises InvalidTextError when text is empty or only whitespace.
+    May raise ServiceUnavailableError if Watson service fails when credentials are set.
+    """
     if text is None or not str(text).strip():
         raise InvalidTextError("Input text is required.")
 
