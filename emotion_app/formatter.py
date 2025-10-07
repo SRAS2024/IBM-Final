@@ -1,11 +1,11 @@
-"""Output formatting helpers with blended-emotion naming for seven cores.
+"""Output formatting helpers for seven core emotions.
 
 Cores: anger, disgust, fear, joy, sadness, passion, surprise
 This module converts raw detector scores into:
 - a normalized mixture across seven cores
 - an entropy based confidence
 - a human friendly blended name
-- a single-label 'emotion' (final state) suitable for UI
+- a single label 'emotion' suitable for UI
 - a suggested emoji list for UI display
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from .detector import EmotionResult
 
 EMOTIONS = ["anger", "disgust", "fear", "joy", "sadness", "passion", "surprise"]
 
-# Canonical pair names for blended_emotion (NOT for final 'emotion' label)
+# Canonical pair names for blended_emotion
 PAIR_NAMES = {
     tuple(sorted(["anger", "disgust"])): "Contempt",
     tuple(sorted(["anger", "fear"])): "Outrage",
@@ -30,11 +30,9 @@ PAIR_NAMES = {
     tuple(sorted(["fear", "surprise"])): "Shock",
     tuple(sorted(["anger", "surprise"])): "Indignant shock",
     tuple(sorted(["passion", "joy"])): "In love",
-    # pair with fear kept only for blended naming, final emotion stays single
-    tuple(sorted(["passion", "fear"])): "Aflutter (nervous)",
+    tuple(sorted(["passion", "fear"])): "Aflutter",
 }
 
-# Triad names are optional. Keep a few illustrative ones (for blended only).
 TRIAD_NAMES = {
     tuple(sorted(["anger", "disgust", "fear"])): "Moral outrage",
     tuple(sorted(["anger", "sadness", "fear"])): "Distress",
@@ -42,7 +40,6 @@ TRIAD_NAMES = {
     tuple(sorted(["joy", "sadness", "disgust"])): "Embarrassed amusement",
 }
 
-# Emoji suggestions keyed by single labels (for final 'emotion')
 EMOJI_SUGGEST = {
     "Anger": ["😠"],
     "Disgust": ["🤢"],
@@ -63,10 +60,12 @@ EMOJI_SUGGEST = {
 }
 
 def _normalize(scores: Dict[str, float]) -> Dict[str, float]:
-    s = sum(scores.get(k, 0.0) for k in EMOTIONS)
+    """Normalize scores to a probability like mixture without flooring to zero."""
+    s = sum(max(0.0, scores.get(k, 0.0)) for k in EMOTIONS)
     if s <= 0:
-        return {k: 0.0 for k in EMOTIONS}
-    return {k: scores.get(k, 0.0) / s for k in EMOTIONS}
+        # uniform tiny mass so downstream never divides by zero
+        return {k: 1.0 / len(EMOTIONS) for k in EMOTIONS}
+    return {k: max(0.0, scores.get(k, 0.0)) / s for k in EMOTIONS}
 
 def _entropy(p: Dict[str, float]) -> float:
     eps = 1e-12
@@ -83,20 +82,16 @@ def _top_components(p: Dict[str, float]) -> List[Tuple[str, float]]:
 def _title(s: str) -> str:
     return s[:1].upper() + s[1:] if s else s
 
-# ---------- Single-state logic (drives the 'emotion' field) ----------
-
+# Single state logic for the 'emotion' field
 def _single_state_overrides(p: Dict[str, float]) -> str | None:
-    """Return a single label when mixture strongly implies a specific state."""
     sad = p["sadness"]; joy = p["joy"]; pas = p["passion"]; fear = p["fear"]
     sup = p["surprise"]; ang = p["anger"]
 
-    # Clear single-core dominance
     ranked = _top_components(p)
     k1, v1 = ranked[0]
     if v1 >= 0.60 and (v1 - ranked[1][1]) >= 0.15:
         return _title(k1)
 
-    # Thematic states
     if sad >= 0.65 and joy <= 0.20:
         return "Mourning"
     if pas >= 0.55 and joy >= 0.25:
@@ -104,72 +99,51 @@ def _single_state_overrides(p: Dict[str, float]) -> str | None:
     if sup >= 0.50 and fear >= 0.25:
         return "Shock"
     if sup >= 0.45 and joy >= 0.25:
-        return "Awe"  # single label; blended may still say "Delighted surprise"
+        return "Awe"
     if sup >= 0.45 and ang >= 0.25:
-        return "Outrage"  # single label; blended can be "Indignant shock"
+        return "Outrage"
     if joy >= 0.55 and sad >= 0.25:
         return "Nostalgia"
 
     return None
 
 def _final_emotion_label(p: Dict[str, float]) -> str:
-    """Always return a single emotion label (never a sentence)."""
     single = _single_state_overrides(p)
     if single:
         return single
-
-    # Otherwise choose top component as the single label
     k1, v1 = _top_components(p)[0]
     if v1 < 0.20:
         return "N/A"
     return _title(k1)
 
-# ---------- Blended label (for extra context; may be pair/triad) ----------
-
+# Blended label for context
 def _blend_name(p: Dict[str, float]) -> str:
     ranked = _top_components(p)
     k1, v1 = ranked[0]
     k2, v2 = ranked[1]
     v3 = ranked[2][1]
 
-    # Strong single emotion
     if v1 >= 0.60 and (v1 - v2) >= 0.15:
         return _title(k1)
 
-    # Common pair blends
-    if (v1 + v2) >= 0.70 and (v1 - v2) < 0.20:
+    if (v1 + v2) >= 0.70 and abs(v1 - v2) < 0.20:
         pair = tuple(sorted([k1, k2]))
-        if pair in PAIR_NAMES:
-            return PAIR_NAMES[pair]
-        return f"{_title(pair[0])} + {_title(pair[1])}"
+        return PAIR_NAMES.get(pair, f"{_title(pair[0])} + {_title(pair[1])}")
 
-    # Triad when evidence is spread but focused
     if (v1 + v2 + v3) >= 0.85 and v1 < 0.50:
         tri = tuple(sorted([ranked[0][0], ranked[1][0], ranked[2][0]]))
-        if tri in TRIAD_NAMES:
-            return TRIAD_NAMES[tri]
-        return "Mixed State"
+        return TRIAD_NAMES.get(tri, "Mixed State")
 
-    # Weak or flat evidence
     if v1 < 0.35:
         return "N/A"
 
-    # Default to top with qualifier
     return f"{_title(k1)} leaning {_title(k2)}"
-
-# ---------- Emoji selection ----------
 
 def _emoji_for(label: str) -> List[str]:
     if label in EMOJI_SUGGEST:
         return EMOJI_SUGGEST[label]
-    # Safe fallbacks for unknown labels
-    if label in ("N/A", "Mixed State"):
-        return EMOJI_SUGGEST["N/A"]
-    # Try core names
     guess = EMOJI_SUGGEST.get(_title(label))
     return guess if guess else ["🤔"]
-
-# ---------- Public formatter ----------
 
 def _round3(x: float) -> float:
     return float(f"{x:.3f}")
@@ -180,33 +154,37 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
     Output keys:
       anger, disgust, fear, joy, sadness, passion, surprise
       dominant_emotion
-      blended_emotion     (pair/triad-friendly)
-      emotion             (single label, never a sentence)
-      confidence          (0..1)
-      mixture             (normalized scores, 3dp)
-      components          (sorted components for transparency)
-      emoji               (1–2 suggested emoji aligned with 'emotion')
+      blended_emotion
+      emotion
+      confidence
+      mixture
+      components
+      emoji
     """
     base = asdict(result)
 
-    raw = {k: float(base[k]) for k in EMOTIONS}
+    # Ensure the seven core scores are always present and non negative floats
+    raw = {k: float(max(0.0, base.get(k, 0.0))) for k in EMOTIONS}
     p = _normalize(raw)
-
-    # Slight neutral floor so a tiny blip doesn't dominate noise
-    p = {k: max(0.0, v - 0.02) for k, v in p.items()}
-    s = sum(p.values()) or 1.0
-    p = {k: v / s for k, v in p.items()}
 
     blended = _blend_name(p)
     final_single = _final_emotion_label(p)
     conf = _confidence(p)
 
     mixture = {k: _round3(v) for k, v in p.items()}
-    components = [(k, _round3(v)) for k, v in _top_components(p)]
+    components = [{"name": k, "weight": _round3(v)} for k, v in _top_components(p)]
     emoji = _emoji_for(final_single)
 
+    # Update base while keeping dominant_emotion from the detector
     base.update(
         {
+            "anger": raw["anger"],
+            "disgust": raw["disgust"],
+            "fear": raw["fear"],
+            "joy": raw["joy"],
+            "sadness": raw["sadness"],
+            "passion": raw["passion"],
+            "surprise": raw["surprise"],
             "blended_emotion": blended,
             "emotion": final_single,
             "confidence": _round3(conf),
