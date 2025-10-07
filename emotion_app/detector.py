@@ -109,6 +109,7 @@ JOY = {
     "fun", "cute", "beautiful", "brilliant", "best", "perfect",
     "encourage", "optimistic", "optimism", "relief", "relieved",
     "comfort", "comfortable", "comfy", "support", "supported",
+    "thrilled", "ecstatic", "elated", "glowing", "uplift", "brighten",
 }
 SADNESS = {
     "sad", "sadden", "saddened", "down", "depress", "depressed", "depressing",
@@ -117,6 +118,7 @@ SADNESS = {
     "helpless", "gloomy", "lost", "regret", "regretful", "sorry", "miss",
     "missing", "tired", "drained", "exhausted", "empty", "broken",
     "devastated", "melancholy", "homesick", "aching", "pain", "hurt",
+    "downcast", "forlorn", "sombre", "somber",
 }
 ANGER = {
     "angry", "anger", "mad", "furious", "rage", "raging", "irritated", "annoyed",
@@ -125,6 +127,7 @@ ANGER = {
     "frustrated", "frustrating", "infuriating", "disrespect", "insult", "insulted",
     "offended", "betrayed", "backstabbed", "lied", "lying", "cheated", "deceived",
     "ragequit", "rageful", "enraged", "fed", "fedup", "ticked", "tickedoff",
+    "irate", "seethe", "seething", "boil", "boiling",
 }
 FEAR = {
     "scare", "scared", "afraid", "fear", "fearful", "terrified", "terrify",
@@ -132,32 +135,33 @@ FEAR = {
     "nervous", "phobia", "frighten", "frightened", "tense", "uneasy", "alarmed",
     "concerned", "concern", "dread", "spook", "shaky", "shaking", "uncertain",
     "doubt", "doubted", "doubting", "threat", "threatened", "unsafe",
+    "unease", "apprehensive", "jitters", "restless",
 }
 DISGUST = {
     "disgust", "disgusted", "gross", "nasty", "revolting", "repulsed", "repulsive",
     "sicken", "sickened", "vile", "filthy", "dirty", "yuck", "ew", "eww",
     "creep", "creepy", "rotten", "stink", "stinks", "stinky", "abhorrent",
-    "appalling", "offensive", "foul", "toxic", "contaminated",
+    "appalling", "offensive", "foul", "toxic", "contaminated", "putrid",
 }
 
 # Multiword expressions and idioms mapped to emotions with weights.
 PHRASES: List[Tuple[str, str, float]] = [
     ("over the moon", "joy", 1.8),
     ("on cloud nine", "joy", 1.6),
-    ("could not be happier", "joy", 1.8),
-    ("couldn't be happier", "joy", 1.8),
+    ("could not be happier", "joy", 1.9),
+    ("couldn't be happier", "joy", 1.9),
     ("walking on air", "joy", 1.6),
     ("in tears", "sadness", 1.4),
-    ("cry my eyes out", "sadness", 1.8),
-    ("heart is broken", "sadness", 1.8),
+    ("cry my eyes out", "sadness", 1.9),
+    ("heart is broken", "sadness", 1.9),
     ("i feel empty", "sadness", 1.6),
-    ("boiling with rage", "anger", 1.9),
-    ("lost my temper", "anger", 1.6),
-    ("at my wits end", "anger", 1.4),
-    ("out of my mind with worry", "fear", 1.8),
-    ("sick to my stomach", "disgust", 1.6),
-    ("gives me the creeps", "disgust", 1.6),
-    ("creeps me out", "disgust", 1.6),
+    ("boiling with rage", "anger", 2.0),
+    ("lost my temper", "anger", 1.7),
+    ("at my wits end", "anger", 1.5),
+    ("out of my mind with worry", "fear", 1.9),
+    ("sick to my stomach", "disgust", 1.7),
+    ("gives me the creeps", "disgust", 1.7),
+    ("creeps me out", "disgust", 1.7),
 ]
 
 # Emoji and emoticons mapped to emotions.
@@ -169,17 +173,27 @@ EMOJI = {
     "disgust": {"🤢", "🤮"},
 }
 
-# Linguistic controls
+# Linguistic controls and cues
 NEGATIONS = {
     "not", "no", "never", "hardly", "barely", "without", "lack", "lacking",
     "isnt", "isn't", "dont", "don't", "cant", "can't", "wont", "won't",
 }
 INTENSIFIERS = {"very", "really", "so", "extremely", "super", "incredibly", "totally", "absolutely", "quite", "truly"}
 DAMPENERS = {"slightly", "somewhat", "kinda", "kind", "sort", "sorta", "a", "bit", "little", "mildly"}
+HEDGES = {"maybe", "perhaps", "possibly", "i guess", "i suppose", "i think", "sort of", "kind of"}
 CONTRASTIVE = {"but", "however", "though", "although", "yet", "nevertheless", "nonetheless", "still"}
 TEMPORAL_POS = {"now", "finally", "at last"}
 TEMPORAL_NEG = {"still", "yet", "anymore", "no longer", "any longer"}
 STANCE_1P = {"i", "im", "i'm", "ive", "i've", "me", "my", "mine"}
+
+# Negated noun phrases that should flip polarity strongly when seen as bigrams
+NEGATED_PAIRS = {
+    ("no", "joy"): ("joy", "sadness", 1.1),
+    ("no", "hope"): ("joy", "sadness", 1.1),
+    ("without", "hope"): ("joy", "sadness", 1.0),
+    ("not", "happy"): ("joy", "sadness", 1.0),
+    ("not", "angry"): ("anger", "fear", 0.8),
+}
 
 TOKEN_RE = re.compile(r"[a-zA-Z']+|[^\w\s]", re.UNICODE)
 
@@ -190,6 +204,7 @@ MISSPELLINGS = {
     "discusting": "disgusting", "discust": "disgust",
     "woried": "worried", "anxios": "anxious", "scarry": "scary",
     "lonley": "lonely", "miserible": "miserable",
+    "wierd": "weird", "definately": "definitely", "releived": "relieved",
 }
 APPROX_TARGETS = set().union(JOY, SADNESS, ANGER, FEAR, DISGUST)
 
@@ -201,6 +216,8 @@ def _normalize_elongation(text: str) -> str:
 
 def _tokens(text: str) -> List[str]:
     text = _normalize_elongation(text)
+    # collapse common doubled words like "so so" which should act like a light intensifier
+    text = re.sub(r"\b(so|very)\s+\1\b", r"\1", text, flags=re.IGNORECASE)
     return [t.lower() for t in TOKEN_RE.findall(text)]
 
 
@@ -225,8 +242,7 @@ def _approx_correction(stem: str) -> str:
         return stem
     if stem in MISSPELLINGS:
         return MISSPELLINGS[stem]
-    # Fuzzy match among target stems. Cutoff keeps precision high.
-    matches = difflib.get_close_matches(stem, APPROX_TARGETS, n=1, cutoff=0.87)
+    matches = difflib.get_close_matches(stem, APPROX_TARGETS, n=1, cutoff=0.90)
     return matches[0] if matches else stem
 
 
@@ -260,22 +276,30 @@ def _sarcasm_cue(tokens: List[str]) -> bool:
 
 def _lex_hit(stem: str) -> Dict[str, float]:
     scores = {k: 0.0 for k in ("joy", "sadness", "anger", "fear", "disgust")}
-    if stem in JOY:
+    # allow partial stems of length 4+ to match, improves coverage on partial words
+    def in_lex(target: str, bag: set[str]) -> bool:
+        if target in bag:
+            return True
+        if len(target) >= 4:
+            return any(w.startswith(target) for w in bag)
+        return False
+
+    if in_lex(stem, JOY):
         scores["joy"] += 1.0
-    if stem in SADNESS:
+    if in_lex(stem, SADNESS):
         scores["sadness"] += 1.0
-    if stem in ANGER:
+    if in_lex(stem, ANGER):
         scores["anger"] += 1.0
-    if stem in FEAR:
+    if in_lex(stem, FEAR):
         scores["fear"] += 1.0
-    if stem in DISGUST:
+    if in_lex(stem, DISGUST):
         scores["disgust"] += 1.0
     return scores
 
 
-def _merge(a: Dict[str, float], b: Dict[str, float], k: float = 1.0) -> None:
-    for key in a:
-        a[key] += b.get(key, 0.0) * k
+def _merge(acc: Dict[str, float], inc: Dict[str, float], k: float = 1.0) -> None:
+    for key in acc:
+        acc[key] += inc.get(key, 0.0) * k
 
 
 def _apply_phrases(text_lower: str) -> Dict[str, float]:
@@ -284,6 +308,17 @@ def _apply_phrases(text_lower: str) -> Dict[str, float]:
         if phrase in text_lower:
             out[emo] += w
     return out
+
+
+def _apply_negated_pairs(tokens: List[str], scores: Dict[str, float]) -> None:
+    """Boost opposite emotion when explicit negated noun phrases appear."""
+    for i in range(len(tokens) - 1):
+        bigram = (tokens[i], tokens[i + 1])
+        if bigram in NEGATED_PAIRS:
+            src, dst, mult = NEGATED_PAIRS[bigram]
+            scores[dst] += 0.9 * mult
+            # also damp the source to avoid ties
+            scores[src] *= 0.6
 
 
 def _score_clause(tokens: List[str]) -> Dict[str, float]:
@@ -302,7 +337,7 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
         # Emoji and emoticons
         _merge(scores, _emoji_boost(raw))
 
-        # Lexical hit with local modifiers and typo correction
+        # Lexical hit with local modifiers, typo correction, and emphasis
         stem = _approx_correction(stem)
         base = _lex_hit(stem)
         if any(base.values()):
@@ -313,6 +348,8 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
                 weight *= 1.35
             if any(wt in DAMPENERS for wt in win):
                 weight *= 0.65
+            if any(wt in HEDGES for wt in win):
+                weight *= 0.85
 
             # Negation inversion
             if any(wt in NEGATIONS for wt in win):
@@ -346,6 +383,7 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
     # Heuristic signals not tied to one token
     if "?" in tokens:
         scores["fear"] += 0.2
+        scores["joy"] *= 0.98
     if any(p in tokens for p in ("!", "!!")):
         scores["anger"] += 0.05
 
@@ -358,10 +396,19 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
     if _sarcasm_cue(tokens):
         scores["joy"] *= 0.6
 
+    # Extra rule for all caps segments that signal strong arousal
+    text_seg = "".join(tokens)
+    if re.search(r"\b[A-Z]{4,}\b", text_seg):
+        scores["anger"] *= 1.1
+        scores["joy"] *= 1.07
+
     # Normalize by number of alpha tokens
     denom = max(n_alpha, 1)
     for k in scores:
         scores[k] = scores[k] / denom
+
+    # Explicit negated bigrams after normalization
+    _apply_negated_pairs(tokens, scores)
 
     return scores
 
@@ -422,13 +469,13 @@ def _choose_dominant(scores: Dict[str, float]) -> str:
     if sum(vals) < 0.01 or max(vals) < 0.08:
         return "N/A"
     ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-    if len(ordered) >= 2 and ordered[0][1] - ordered[1][1] < 0.04:
+    # slightly stricter tie margin to avoid spurious winners
+    if len(ordered) >= 2 and ordered[0][1] - ordered[1][1] < 0.05:
         return "N/A"
     return ordered[0][0]
 
 
 def _fallback_model(text: str) -> Dict[str, float]:
-    # Pre pass for phrase detection on the raw text
     tokens = _tokens(text)
     if not tokens:
         return {k: 0.0 for k in ("anger", "disgust", "fear", "joy", "sadness")}
