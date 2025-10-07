@@ -1,4 +1,4 @@
- package interface for emotion_app."""
+"""Public package interface for emotion_app."""
 from .detector import emotion_detector, EmotionResult
 from .formatter import format_emotions
 from .errors import InvalidTextError, ServiceUnavailableError
