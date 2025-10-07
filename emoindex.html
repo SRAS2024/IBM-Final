@@ -66,18 +66,15 @@
       .status.err{color:#fca5a5}
       .emojiInline{font-size:1.6rem;display:flex;gap:.35rem;align-items:center;min-height:1.6rem}
 
-      /* Right column panels */
       .panelTitle{margin:.25rem 0 1rem 0;font-weight:700}
       .kv{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
       .pill{padding:.55rem .7rem;border:1px solid var(--border);border-radius:12px;background:#0a0f1a;font-weight:600}
       .value{min-width:4.5rem;text-align:right;background:#04070f;border:1px solid #0f172a;padding:.55rem .7rem;border-radius:12px;font-variant-numeric:tabular-nums}
-      .hr{height:1px;background:var(--border);margin:1rem 0}
       .meta{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
       .meta .label{color:var(--muted)}
 
       footer{margin-top:2rem;color:var(--muted);text-align:center;font-size:.9rem}
 
-      /* Modal */
       .overlay{
         position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
         align-items:center;justify-content:center;padding:1rem;z-index:40
@@ -102,7 +99,6 @@
       <div class="topbar">
         <div class="brand">
           <div class="logo" aria-hidden="true">
-            <!-- simple heart wave mark -->
             <svg viewBox="0 0 24 24" fill="none" stroke="#0b1220" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 21s-5.5-3.6-8.2-6.3A5.2 5.2 0 0 1 11 5.5L12 7l1-1.5a5.2 5.2 0 0 1 7.2 9.2C17.5 17.4 12 21 12 21z"/>
             </svg>
@@ -115,7 +111,6 @@
       <h1>Emotion Detector</h1>
 
       <section class="grid">
-        <!-- Left: input and inline emoji result -->
         <div class="card">
           <label for="text">Text</label>
           <textarea id="text" placeholder="Type a short passage. For example: I am grateful and excited to begin something new today."></textarea>
@@ -126,7 +121,6 @@
           </div>
         </div>
 
-        <!-- Right: two stacked panels -->
         <div>
           <div class="card" style="margin-bottom:1.25rem">
             <div class="panelTitle">Analysis</div>
@@ -144,10 +138,8 @@
           <div class="card">
             <div class="panelTitle">Results</div>
             <div class="meta">
-              <div class="label">Dominant</div>   <div class="value" id="v-dominant">N/A</div>
-              <div class="label">Emotion</div>    <div class="value" id="v-emotion">N/A</div>
-              <div class="label">Blended</div>    <div class="value" id="v-blended">N/A</div>
-              <div class="label">Confidence</div> <div class="value" id="v-confidence">0.000</div>
+              <div class="label">Dominant</div> <div class="value" id="v-dominant">N/A</div>
+              <div class="label">Emotion</div>  <div class="value" id="v-emotion">N/A</div>
             </div>
           </div>
         </div>
@@ -156,7 +148,6 @@
       <footer>© 2025 In tuned. All rights reserved.</footer>
     </div>
 
-    <!-- Help modal -->
     <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal">
         <h2 id="modalTitle">About In tuned</h2>
@@ -166,7 +157,7 @@
         </p>
         <p class="muted" style="margin-top:.6rem">How it works:</p>
         <p>
-          Your text is analyzed across seven core emotions on a continuous scale. We select a dominant core and also compute a final two emotion label that best matches the mixture. The goal is clarity and self reflection.
+          Your text is analyzed across seven core emotions on a continuous scale. The app selects a dominant core and also produces a final two emotion label that best matches the mixture. The goal is clarity and self reflection.
         </p>
         <div class="actions">
           <button id="closeModal" class="ghost">Done</button>
@@ -186,9 +177,7 @@
         passion: $('v-passion'),
         surprise: $('v-surprise'),
         dominant_emotion: $('v-dominant'),
-        blended_emotion: $('v-blended'),
         emotion: $('v-emotion'),
-        confidence: $('v-confidence'),
       };
 
       const emojiInline = $('emojiInline');
@@ -198,7 +187,7 @@
         s.textContent = text || '';
         s.className = 'status' + (isError ? ' err' : '');
       }
-      function fmt(v){ return typeof v === 'number' ? v.toFixed(3) : String(v ?? ''); }
+      const fmt = v => typeof v === 'number' ? v.toFixed(3) : String(v ?? '');
 
       $('analyze').addEventListener('click', async ()=>{
         const text = $('text').value.trim();
@@ -212,7 +201,7 @@
           const data = await res.json();
           if(!res.ok) throw new Error(data?.error || 'Request failed');
 
-          // Core scores
+          // Scores
           fields.anger.textContent    = fmt(data.anger);
           fields.disgust.textContent  = fmt(data.disgust);
           fields.fear.textContent     = fmt(data.fear);
@@ -221,13 +210,11 @@
           fields.passion.textContent  = fmt(data.passion ?? 0);
           fields.surprise.textContent = fmt(data.surprise ?? 0);
 
-          // Metadata
+          // Results
           fields.dominant_emotion.textContent = data.dominant_emotion || 'N/A';
-          fields.blended_emotion.textContent  = data.blended_emotion || 'N/A';
           fields.emotion.textContent          = data.emotion || 'N/A';
-          fields.confidence.textContent       = fmt(parseFloat(data.confidence || 0));
 
-          // Emoji near the Analyze button
+          // Emoji near the Analyze button. One or two depending on the result.
           const em = Array.isArray(data.emoji) ? data.emoji : [];
           emojiInline.textContent = em.length ? em.join(' ') : '🤔';
 
@@ -235,7 +222,7 @@
         }catch(err){
           setStatus(err?.message || 'Unexpected error', true);
           for (const k of Object.keys(fields)) {
-            if (k === 'dominant_emotion' || k === 'blended_emotion' || k === 'emotion') {
+            if (k === 'dominant_emotion' || k === 'emotion') {
               fields[k].textContent = 'N/A';
             } else {
               fields[k].textContent = '0.000';
@@ -245,7 +232,7 @@
         }
       });
 
-      // Modal logic
+      // Modal
       const overlay = $('overlay');
       $('helpBtn').addEventListener('click', ()=> overlay.classList.add('show'));
       $('closeModal').addEventListener('click', ()=> overlay.classList.remove('show'));
