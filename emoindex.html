@@ -1,67 +1,211 @@
-ype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Emotion Detector</title>
+    <meta name="description" content="Simple IBM Watson style emotion detector UI driven by a Flask API." />
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; line-height: 1.5; }
-      h1 { margin-top: 0; }
-      textarea { width: 100%; max-width: 800px; height: 140px; }
-      button { padding: 0.6rem 1rem; font-size: 1rem; cursor: pointer; }
-      .result { margin-top: 1rem; white-space: pre-wrap; }
-      .error { color: #b00020; }
-      .muted { color: #666; }
+      :root {
+        --bg: #f6f7fb;
+        --card: #ffffff;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #2563eb;
+        --primary-press: #1e40af;
+        --ok: #16a34a;
+        --err: #b91c1c;
+        --border: #e5e7eb;
+        --shadow: 0 10px 18px rgba(0,0,0,.08);
+        --radius: 14px;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(1200px 600px at 10% -10%, #e8eeff 0%, transparent 60%), var(--bg);
+        color: var(--text);
+      }
+
+      .wrap {
+        max-width: 960px; margin: 4rem auto; padding: 0 1rem;
+      }
+
+      header h1 {
+        font-size: 2.25rem; margin: 0 0 .25rem 0; letter-spacing: .2px;
+      }
+      header p {
+        margin: 0; color: var(--muted);
+      }
+
+      .grid {
+        margin-top: 1.25rem;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+      @media (min-width: 960px) {
+        .grid { grid-template-columns: 2fr 1fr; }
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 1.25rem;
+      }
+
+      label {
+        display: block; font-weight: 600; margin-bottom: .5rem;
+      }
+      textarea {
+        width: 100%; min-height: 160px; resize: vertical;
+        padding: .9rem 1rem; border-radius: 12px;
+        border: 1px solid var(--border); outline: none;
+        font-size: 1rem; line-height: 1.45;
+        background: #fff;
+      }
+      textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+
+      .row { display: flex; gap: .75rem; align-items: center; margin-top: .9rem; }
+      .btn {
+        appearance: none; border: none; cursor: pointer;
+        padding: .7rem 1rem; border-radius: 12px;
+        background: var(--primary); color: #fff; font-weight: 600;
+      }
+      .btn:active { background: var(--primary-press); }
+      .btn[disabled] { opacity: .6; cursor: not-allowed; }
+
+      .hint { color: var(--muted); font-size: .95rem; margin-top: .5rem; }
+
+      .result {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        background: #0b1220; color: #e5edf9;
+        border-radius: 12px; padding: 1rem; overflow: auto; min-height: 140px;
+        border: 1px solid #111827;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
+      }
+
+      .kv { display: grid; grid-template-columns: 1fr auto; gap: .5rem 1rem; }
+      .kv div { padding: .4rem .6rem; border-radius: 10px; background: #f9fafb; border: 1px solid var(--border); }
+      .kv .em { font-weight: 700; }
+
+      .status { margin-top: .5rem; font-size: .95rem; }
+      .status.ok { color: var(--ok); }
+      .status.err { color: var(--err); }
+
+      footer { margin-top: 2rem; color: var(--muted); font-size: .9rem; text-align: center; }
+      code { background: #eef2ff; padding: .1rem .35rem; border-radius: 6px; }
+      .spacer { height: .35rem; }
     </style>
   </head>
   <body>
-    <h1>Emotion Detector</h1>
+    <div class="wrap">
+      <header>
+        <h1>Emotion Detector</h1>
+        <p>Analyze text and view emotion scores returned by the Flask API.</p>
+      </header>
 
-    <p class="muted">Enter some text, then submit. You can also POST JSON to <code>/emotionDetector</code> with a <code>{"text": "..."}</code> body.</p>
+      <section class="grid">
+        <div class="card">
+          <label for="text">Text</label>
+          <textarea id="text" placeholder="Type some text, for example: I am happy and excited to start a new project today."></textarea>
 
-    <textarea id="text" placeholder="Type text to analyze..."></textarea>
-    <div>
-      <button id="analyze">Analyze</button>
+          <div class="row">
+            <button id="analyze" class="btn">Analyze</button>
+            <span id="status" class="status" aria-live="polite"></span>
+          </div>
+
+          <p class="hint">
+            The UI calls <code>POST /emotionDetector</code> with a JSON body
+            <code>{"text": "..."}</code>. The API returns five scores and the dominant emotion.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3 style="margin-top:0">Summary</h3>
+          <div class="kv" id="summary">
+            <div>anger</div><div class="em" id="s-anger">0.000</div>
+            <div>disgust</div><div class="em" id="s-disgust">0.000</div>
+            <div>fear</div><div class="em" id="s-fear">0.000</div>
+            <div>joy</div><div class="em" id="s-joy">0.000</div>
+            <div>sadness</div><div class="em" id="s-sadness">0.000</div>
+            <div>dominant_emotion</div><div class="em" id="s-dominant">n/a</div>
+          </div>
+
+          <div class="spacer"></div>
+
+          <h3>Raw response</h3>
+          <pre class="result" id="out">{}</pre>
+        </div>
+      </section>
+
+      <footer>
+        <span>Final Project • Flask API • Unit tests ready</span>
+      </footer>
     </div>
 
-    <div id="out" class="result"></div>
-
     <script>
-      const btn = document.getElementById('analyze');
-      const out = document.getElementById('out');
+      const el = (id) => document.getElementById(id);
 
-      btn.addEventListener('click', async () => {
-        const text = document.getElementById('text').value;
-        out.textContent = 'Analyzing...';
+      function setStatus(msg, ok = true) {
+        const st = el('status');
+        st.textContent = msg || '';
+        st.className = 'status ' + (ok ? 'ok' : 'err');
+      }
+
+      function setSummary(data) {
+        const num = (v) => typeof v === 'number' ? v.toFixed(3) : String(v ?? '');
+        el('s-anger').textContent = num(data.anger);
+        el('s-disgust').textContent = num(data.disgust);
+        el('s-fear').textContent = num(data.fear);
+        el('s-joy').textContent = num(data.joy);
+        el('s-sadness').textContent = num(data.sadness);
+        el('s-dominant').textContent = data.dominant_emotion ?? '';
+      }
+
+      async function analyze() {
+        const btn = el('analyze');
+        const text = el('text').value;
+
+        btn.disabled = true;
+        setStatus('Analyzing, please wait...', true);
+        el('out').textContent = '';
 
         try {
-          const res = await fetch('/emotionDetector', {
+          const resp = await fetch('/emotionDetector', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text })
           });
 
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || ('HTTP ' + res.status));
+          const data = await resp.json();
+
+          if (!resp.ok) {
+            throw new Error(data && data.error ? data.error : 'Request failed');
           }
 
-          const data = await res.json();
-          const lines = [
-            `anger:   ${data.anger?.toFixed?.(3) ?? data.anger}`,
-            `disgust: ${data.disgust?.toFixed?.(3) ?? data.disgust}`,
-            `fear:    ${data.fear?.toFixed?.(3) ?? data.fear}`,
-            `joy:     ${data.joy?.toFixed?.(3) ?? data.joy}`,
-            `sadness: ${data.sadness?.toFixed?.(3) ?? data.sadness}`,
-            ``,
-            `dominant_emotion: ${data.dominant_emotion}`
-          ];
-          out.classList.remove('error');
-          out.textContent = lines.join('\n');
-        } catch (e) {
-          out.classList.add('error');
-          out.textContent = 'Error: ' + (e && e.message ? e.message : e);
+          el('out').textContent = JSON.stringify(data, null, 2);
+          setSummary(data);
+          setStatus('Done', true);
+        } catch (err) {
+          setStatus(err && err.message ? err.message : 'Unexpected error', false);
+          el('out').textContent = '';
+          setSummary({
+            anger: 0, disgust: 0, fear: 0, joy: 0, sadness: 0, dominant_emotion: 'n/a'
+          });
+        } finally {
+          btn.disabled = false;
         }
+      }
+
+      el('analyze').addEventListener('click', analyze);
+      el('text').addEventListener('keydown', (e) => {
+        if (e.metaKey && e.key === 'Enter') analyze();
+        if (e.ctrlKey && e.key === 'Enter') analyze();
       });
     </script>
   </body>
