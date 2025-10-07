@@ -22,8 +22,13 @@ def test_invalid_text_raises():
 
 
 def test_fallback_model_scores_exist():
-    res = emotion_detector("I am happy and full of joy, nothing to fear.")
-    assert res.dominant_emotion in {"joy", "fear", "anger", "disgust", "sadness"}
-    for key in ["joy", "sadness", "anger", "fear", "disgust"]:
+    res = emotion_detector("I am happy and full of joy, a little anxious, and honestly surprised.")
+    cores = {"joy", "sadness", "anger", "fear", "disgust", "passion", "surprise"}
+
+    # dominant can be any core or N/A
+    assert res.dominant_emotion in cores.union({"N/A"})
+
+    # Each score is within [0, 1]
+    for key in cores:
         val = getattr(res, key)
         assert 0.0 <= val <= 1.0
