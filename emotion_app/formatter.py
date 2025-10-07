@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Output formatting helpers for seven core emotions with rich final labels.
 
 Cores: anger, disgust, fear, joy, sadness, passion, surprise
@@ -13,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from .detector import EmotionResult
 
@@ -42,10 +43,7 @@ TRIAD_NAMES = {
     tuple(sorted(["joy", "sadness", "disgust"])): "Embarrassed amusement",
 }
 
-# Rich single label space.
-# Each entry is a prototype vector over the seven cores. We choose the closest label
-# by cosine similarity, with guard rails so we do not force a label on flat noise.
-# Vectors do not need to sum to one.
+# Rich single label prototypes over the seven cores
 PROTOTYPES: Dict[str, List[float]] = {
     # Positives
     "Joyful":               [0.02, 0.00, 0.02, 1.00, 0.00, 0.05, 0.10],
@@ -91,13 +89,13 @@ PROTOTYPES: Dict[str, List[float]] = {
     "Embarrassed amusement":[0.10, 0.35, 0.10, 0.55, 0.35, 0.00, 0.10],
 }
 
-# Suggested emoji keyed by final label. Falls back to core name capitalized or "N/A".
+# Suggested emoji keyed by final label
 EMOJI_SUGGEST = {
     "Angry": ["😠"], "Disgusted": ["🤢"], "Anxious": ["😨"], "Joyful": ["😊"],
     "Sad": ["😢"], "In love": ["😍"], "Shocked": ["😱"], "Awe": ["😮", "✨"],
     "Nostalgia": ["🕰️", "🙂"], "Contempt": ["😒"], "Outrage": ["😡"],
     "Bittersweet": ["🥲"], "Mourning": ["🖤"], "Heartbroken": ["💔"],
-    "Infatuated": ["🥰"], "Committed": ["💍"], "Relief": ["😮‍💨"], "Calm": ["😌"],
+    "Infatuated": ["🥰"], "Committed": ["💍"], "Relief": ["😮\u200d💨"], "Calm": ["😌"],
     "Appalled": ["😧"], "Uneasy": ["😬"], "Apprehensive": ["😟"],
     "Delighted surprise": ["🤩"], "Indignant shock": ["😤", "😳"],
     "Moral outrage": ["😤"], "Schadenfreude": ["😏"], "Embarrassed amusement": ["😅"],
@@ -134,14 +132,15 @@ def _dot(a: List[float], b: List[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
 
 def _norm(v: List[float]) -> float:
-    return math.sqrt(sum(x * x for x in v)) or 1.0
+    n = math.sqrt(sum(x * x for x in v))
+    return n if n > 0 else 1.0
 
 def _cosine(a: List[float], b: List[float]) -> float:
     return _dot(a, b) / (_norm(a) * _norm(b))
 
 # ------------------------- single state logic -------------------------
 
-def _single_state_overrides(p: Dict[str, float]) -> str | None:
+def _single_state_overrides(p: Dict[str, float]) -> Optional[str]:
     sad = p["sadness"]; joy = p["joy"]; pas = p["passion"]; fear = p["fear"]
     sup = p["surprise"]; ang = p["anger"]
 
@@ -198,21 +197,19 @@ def _vector_from_p(p: Dict[str, float]) -> List[float]:
 
 def _best_prototype_label(p: Dict[str, float]) -> Tuple[str, float]:
     v = _vector_from_p(p)
-    best = ("N/A", -1.0)
+    best_label = "N/A"
+    best_sim = -1.0
     for label, proto in PROTOTYPES.items():
         sim = _cosine(v, proto)
-        if sim > best[1]:
-            best = (label, sim)
-    return best
+        if sim > best_sim:
+            best_label, best_sim = label, sim
+    return best_label, best_sim
 
 def _final_emotion_label(p: Dict[str, float]) -> str:
-    # First try deterministic overrides for clarity
     single = _single_state_overrides(p)
     if single:
         return single
 
-    # Then choose the closest prototype if the mixture has enough structure
-    # We require that the top component is at least 0.22 and confidence is not too low
     conf = _confidence(p)
     k1, v1 = _top_components(p)[0]
     if v1 >= 0.22 and conf >= 0.15:
@@ -220,7 +217,6 @@ def _final_emotion_label(p: Dict[str, float]) -> str:
         if sim >= 0.72:
             return label
 
-    # Fall back to the capitalized top core or N/A
     if v1 < 0.20:
         return "N/A"
     return _title(k1)
@@ -259,7 +255,6 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
     """
     base = asdict(result)
 
-    # Keep seven raw scores as floats
     raw = {k: float(max(0.0, base.get(k, 0.0))) for k in EMOTIONS}
     p = _normalize(raw)
 
@@ -272,7 +267,6 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
     emoji = _emoji_for(final_single)
     present = _present_subset(p, eps=0.03)
 
-    # Update base while keeping detector dominant_emotion
     base.update(
         {
             "anger": raw["anger"],
@@ -286,8 +280,8 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
             "emotion": final_single,
             "confidence": _round3(conf),
             "mixture": mixture,
-            "present": present,                  # only non trivial components
-            "components": components,            # full sorted list
+            "present": present,
+            "components": components,
             "emoji": emoji,
         }
     )
