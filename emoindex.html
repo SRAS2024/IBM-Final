@@ -109,18 +109,22 @@
         border:1px solid var(--border);border-radius:14px;padding:1rem;font-size:1rem;line-height:1.5;outline:none
       }
       textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.2)}
-
-      /* Left-align the action row; emojis appear directly after the button */
       .row{
-        display:flex; align-items:center; gap:.6rem; margin-top:1rem; flex-wrap:wrap;
+        display:grid;grid-auto-flow:column;align-items:center;gap:.9rem;margin-top:1rem;
+        grid-auto-columns: min-content 1fr min-content;
       }
       .btn{
         appearance:none;border:none;cursor:pointer;padding:.85rem 1.15rem;border-radius:12px;
         font-weight:800;background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#0b1220
       }
-      .emojiInline{font-size:1.6rem;display:flex;gap:.35rem;align-items:center;min-height:1.6rem}
-      .status{flex-basis:100%;font-size:.95rem}
+      .status{grid-column:1/-1;font-size:.95rem}
       .status.err{color:#f43f5e}
+      .emojiInline{font-size:1.6rem;display:flex;gap:.35rem;align-items:center;min-height:1.6rem}
+
+      /* emojis flanking the button */
+      .emojiLeft, .emojiRight{
+        width:3rem;display:flex;justify-content:center;align-items:center;
+      }
 
       /* ===================== PANELS ===================== */
       .panelTitle{margin:.25rem 0 1rem 0;font-weight:800;letter-spacing:.15px}
@@ -135,7 +139,9 @@
       .barRow{
         display:grid;grid-template-columns:110px 1fr 64px;gap:.6rem;align-items:center;margin:.35rem 0;
       }
-      .barLabel{font-weight:700;color:var(--muted)}
+      .barLabel{
+        font-weight:700;color:var(--muted);
+      }
       .barTrack{
         height:14px;border-radius:999px;background:var(--bar-bg);position:relative;overflow:hidden;border:1px solid var(--border)
       }
@@ -190,11 +196,11 @@
           <label for="text">Text</label>
           <textarea id="text" placeholder="Type a short passage. For example: I am grateful and excited to begin something new today."></textarea>
 
-          <!-- Button with emojis to its right (dominant first, then rich emotion) -->
+          <!-- Button flanked by emojis (left-aligned) -->
           <div class="row">
+            <span id="emojiDominant" class="emojiInline emojiLeft" aria-live="polite" title="Dominant core">🤔</span>
             <button id="analyze" class="btn">Analyze</button>
-            <span id="emojiDominant" class="emojiInline" aria-live="polite" title="Dominant core">🤔</span>
-            <span id="emojiEmotion" class="emojiInline" aria-live="polite" title="Blended emotion">🤔</span>
+            <span id="emojiEmotion" class="emojiInline emojiRight" aria-live="polite" title="Blended emotion">🤔</span>
             <span id="status" class="status" aria-live="polite"></span>
           </div>
 
@@ -301,6 +307,24 @@
         surprise:"var(--c-surprise)"
       };
 
+      // Emoji maps (client-side fallback for accuracy)
+      const EMOJI_SUGGEST = {
+        "Anger":["😠"], "Disgust":["🤢"], "Fear":["😨"], "Joy":["😊"],
+        "Sadness":["😢"], "Passion":["😍"], "Surprise":["😮"], "N/A":["🤔"],
+        "Joyful":["😊"], "Anxious":["😨"], "In love":["😍"], "Shocked":["😱"],
+        "Awe":["😮","✨"], "Contempt":["😒"], "Outrage":["😡"], "Bittersweet":["🥲"],
+        "Mourning":["🖤"], "Heartbroken":["💔"], "Infatuated":["🥰"], "Committed":["💍"],
+        "Relief":["😮\u200d💨"], "Calm":["😌"], "Appalled":["😧"], "Uneasy":["😬"],
+        "Apprehensive":["😟"], "Delighted surprise":["🤩"], "Indignant shock":["😤","😳"],
+        "Moral outrage":["😤"], "Schadenfreude":["😏"], "Embarrassed amusement":["😅"],
+        "Melancholy":["🎻"], "Nostalgia":["🕰️","🙂"]
+      };
+      const emojiForLabel = (label) => {
+        const key = titleCase(label || 'N/A');
+        return EMOJI_SUGGEST[key] || ["🤔"];
+      };
+      const emojiForCore = (core) => emojiForLabel(core); // same keys for cores
+
       function initBars(){
         const container = $('bars');
         container.innerHTML = '';
@@ -347,22 +371,29 @@
         });
       }
 
-      // Emojis: dominant first, then rich emotion; collapse to one if same
-      function renderEmojis(payload){
-        const same = !!payload.same_label;
-        const emoEm = Array.isArray(payload.emoji_emotion) ? payload.emoji_emotion : [];
-        const emoDom = Array.isArray(payload.emoji_dominant) ? payload.emoji_dominant : [];
+      function renderEmojis({emoji_emotion, emoji_dominant, same_label, dominant_label, emotion_label}){
+        // Ensure we ALWAYS have emojis even if server omits arrays
+        const domArr = Array.isArray(emoji_dominant) && emoji_dominant.length
+          ? emoji_dominant
+          : emojiForCore(dominant_label);
+
+        const emoArr = Array.isArray(emoji_emotion) && emoji_emotion.length
+          ? emoji_emotion
+          : emojiForLabel(emotion_label);
+
+        const same = (typeof same_label === 'boolean')
+          ? same_label
+          : titleCase(dominant_label) === titleCase(emotion_label);
 
         if (same) {
-          emojiDominant.textContent = emoEm.length ? emoEm.join(' ') : '🤔';
-          emojiDominant.title = 'Dominant and blended match';
-          emojiEmotion.textContent  = '';
-          emojiEmotion.title = '';
+          emojiDominant.textContent = '';
+          emojiEmotion.textContent  = emoArr.join(' ');
+          emojiEmotion.title = 'Dominant and blended match';
           return;
         }
-        emojiDominant.textContent = emoDom.length ? emoDom[0] : '🤔';
+        emojiDominant.textContent = domArr[0] || '🤔';
+        emojiEmotion.textContent  = emoArr.join(' ') || '🤔';
         emojiDominant.title = 'Dominant core';
-        emojiEmotion.textContent  = emoEm.length ? emoEm.join(' ') : '🤔';
         emojiEmotion.title  = 'Blended emotion';
       }
 
@@ -389,14 +420,18 @@
           fields.surprise.textContent = fmt(data.surprise ?? 0);
 
           // Labels
-          fields.dominant_emotion.textContent = titleCase(data.dominant_emotion || 'N/A');
-          fields.emotion.textContent          = titleCase(data.emotion || 'N/A');
+          const domLabel = titleCase(data.dominant_emotion || 'N/A');
+          const emoLabel = titleCase(data.emotion || 'N/A');
+          fields.dominant_emotion.textContent = domLabel;
+          fields.emotion.textContent          = emoLabel;
 
-          // Emojis (dominant then emotion)
+          // Emojis (with robust fallback)
           renderEmojis({
-            emoji_emotion: data.emoji_emotion || data.emoji || [],
+            emoji_emotion:  data.emoji_emotion || data.emoji || [],
             emoji_dominant: data.emoji_dominant || [],
-            same_label: !!data.same_label
+            same_label:     (typeof data.same_label === 'boolean') ? data.same_label : undefined,
+            dominant_label: domLabel,
+            emotion_label:  emoLabel
           });
 
           // Chart
@@ -417,7 +452,7 @@
             }
           }
           emojiDominant.textContent = '🤔';
-          emojiEmotion.textContent  = '';
+          emojiEmotion.textContent  = '🤔';
           renderBars({
             anger:0,disgust:0,fear:0,joy:0,sadness:0,passion:0,surprise:0
           });
@@ -448,10 +483,10 @@
       } catch {}
 
       // Build empty chart on load
-      initBars();
-      renderBars({
+      function renderBarsZero(){ renderBars({
         anger:0,disgust:0,fear:0,joy:0,sadness:0,passion:0,surprise:0
-      });
+      }); }
+      initBars(); renderBarsZero();
     </script>
   </body>
 </html>
