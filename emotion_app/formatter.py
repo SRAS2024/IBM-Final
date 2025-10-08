@@ -2,13 +2,15 @@
 """Output formatting helpers for seven core emotions with rich final labels.
 
 Cores: anger, disgust, fear, joy, sadness, passion, surprise
-This module converts raw detector scores into:
-- a normalized mixture across seven cores
-- an entropy based confidence
-- a human friendly blended name
-- a rich single label 'emotion' not limited to the seven cores
-- suggested emoji for UI
-- an optional 'present' subset that includes only non trivial components
+
+This module converts detector scores into:
+- a normalized seven-way mixture suitable for a bar chart
+- an entropy-based confidence
+- a contextual blended name from pair or triad
+- a single rich 'emotion' label from prototype space and overrides
+- separate emojis for dominant core and rich emotion
+- a concise rationale string for UI captions
+- backward-compatible fields for existing callers
 """
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ from .detector import EmotionResult
 EMOTIONS = ["anger", "disgust", "fear", "joy", "sadness", "passion", "surprise"]
 _IDX = {k: i for i, k in enumerate(EMOTIONS)}
 
-# Canonical pair names for blended_emotion
+# Canonical names for top blends
 PAIR_NAMES = {
     tuple(sorted(["anger", "disgust"])): "Contempt",
     tuple(sorted(["anger", "fear"])): "Outrage",
@@ -89,9 +91,9 @@ PROTOTYPES: Dict[str, List[float]] = {
     "Embarrassed amusement":[0.10, 0.35, 0.10, 0.55, 0.35, 0.00, 0.10],
 }
 
-# Suggested emoji keyed by final label
+# Suggested emoji keyed by label
 EMOJI_SUGGEST = {
-    # --- Rich labels (keep existing) ---
+    # Rich labels
     "Angry": ["😠"], "Disgusted": ["🤢"], "Anxious": ["😨"], "Joyful": ["😊"],
     "Sad": ["😢"], "In love": ["😍"], "Shocked": ["😱"], "Awe": ["😮", "✨"],
     "Nostalgia": ["🕰️", "🙂"], "Contempt": ["😒"], "Outrage": ["😡"],
@@ -102,7 +104,7 @@ EMOJI_SUGGEST = {
     "Moral outrage": ["😤"], "Schadenfreude": ["😏"], "Embarrassed amusement": ["😅"],
     "Melancholy": ["🎻"],
 
-    # --- Core labels (added so fallback labels always map) ---
+    # Core labels
     "Anger": ["😠"],
     "Disgust": ["🤢"],
     "Fear": ["😨"],
@@ -164,7 +166,7 @@ def _single_state_overrides(p: Dict[str, float]) -> Optional[str]:
 
     if sad >= 0.65 and joy <= 0.20:
         return "Mourning"
-    # Relaxed passion+joy rule so short texts like "I'm in love" resolve correctly
+    # Passion plus joy override for clear romantic language
     if (pas >= 0.50 and joy >= 0.22) or ((pas + joy) >= 0.70 and abs(pas - joy) <= 0.08):
         return "In love"
     if pas >= 0.65 and sad >= 0.25 and joy <= 0.25:
@@ -188,17 +190,21 @@ def _blend_name(p: Dict[str, float]) -> str:
     k2, v2 = ranked[1]
     v3 = ranked[2][1]
 
+    # If one emotion clearly dominates, use it as a contextual label
     if v1 >= 0.60 and (v1 - v2) >= 0.15:
         return _title(k1)
 
+    # Balanced pair
     if (v1 + v2) >= 0.70 and abs(v1 - v2) < 0.20:
         pair = tuple(sorted([k1, k2]))
         return PAIR_NAMES.get(pair, f"{_title(pair[0])} + {_title(pair[1])}")
 
+    # Triad
     if (v1 + v2 + v3) >= 0.85 and v1 < 0.50:
         tri = tuple(sorted([ranked[0][0], ranked[1][0], ranked[2][0]]))
         return TRIAD_NAMES.get(tri, "Mixed State")
 
+    # Low signal
     if v1 < 0.35:
         return "N/A"
 
@@ -220,18 +226,18 @@ def _best_prototype_label(p: Dict[str, float]) -> Tuple[str, float]:
     return best_label, best_sim
 
 def _final_emotion_label(p: Dict[str, float]) -> str:
-    # Deterministic overrides first (now includes relaxed Passion+Joy rule)
+    # Deterministic overrides first
     single = _single_state_overrides(p)
     if single:
         return single
 
-    # If top two are Passion & Joy and reasonably strong, call it "In love".
+    # If top two are Passion and Joy and reasonably strong, call it In love
     ranked = _top_components(p)
     (k1, v1), (k2, v2) = ranked[0], ranked[1]
     if {"passion", "joy"} == {k1, k2} and (v1 + v2) >= 0.60 and abs(v1 - v2) <= 0.20:
         return "In love"
 
-    # Prototype space (rich labels)
+    # Prototype choice
     conf = _confidence(p)
     if v1 >= 0.22 and conf >= 0.15:
         label, sim = _best_prototype_label(p)
@@ -246,11 +252,13 @@ def _final_emotion_label(p: Dict[str, float]) -> str:
 # ------------------------- emoji selection -------------------------
 
 def _emoji_for(label: str) -> List[str]:
-    # Try exact, then Title-case alias, then default
     if label in EMOJI_SUGGEST:
         return EMOJI_SUGGEST[label]
     guess = EMOJI_SUGGEST.get(_title(label))
     return guess if guess else ["🤔"]
+
+def _emoji_for_core(core_lower: str) -> List[str]:
+    return _emoji_for(_title(core_lower))
 
 # ------------------------- present component filtering -------------------------
 
@@ -259,6 +267,18 @@ def _present_subset(p: Dict[str, float], eps: float = 0.03) -> Dict[str, float]:
     items = [(k, v) for k, v in p.items() if v >= eps]
     items.sort(key=lambda kv: kv[1], reverse=True)
     return {k: _round3(v) for k, v in items}
+
+# ------------------------- rationale -------------------------
+
+def _rationale(p: Dict[str, float], dominant_lower: str, emotion_label: str, blended_label: str) -> str:
+    ranked = _top_components(p)[:3]
+    parts = [f"{_title(k)} {_round3(v)}" for k, v in ranked]
+    # Explain collapse rule expectation: UI may render one emoji when labels match
+    if _title(dominant_lower) == emotion_label:
+        why = f"Dominant and rich emotion match as {_title(dominant_lower)}."
+    else:
+        why = f"Dominant is {_title(dominant_lower)}. Rich label reflects blend as {emotion_label}."
+    return f"Top mix: {', '.join(parts)}. {why} Blended context: {blended_label}."
 
 # ------------------------- public formatter -------------------------
 
@@ -274,25 +294,44 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
       mixture
       present
       components
-      emoji
-      emoji_primary
+      emoji_emotion
+      emoji_dominant
+      same_label
+      rationale
+      emoji          # alias of emoji_emotion for backward compatibility
+      emoji_primary  # first item of emoji_emotion for backward compatibility
     """
     base = asdict(result)
 
+    # Normalize to a probability-like mixture for charting
     raw = {k: float(max(0.0, base.get(k, 0.0))) for k in EMOTIONS}
     p = _normalize(raw)
 
+    # Labels
     blended = _blend_name(p)
     final_single = _final_emotion_label(p)
     conf = _confidence(p)
 
+    # Dominant core from detector is lowercase; title case for emoji map
+    dominant_lower = base.get("dominant_emotion", "") or ""
+    dominant_title = _title(dominant_lower) if dominant_lower else "N/A"
+
+    # Emojis
+    emoji_emotion = _emoji_for(final_single)
+    emoji_dominant = _emoji_for_core(dominant_lower if dominant_lower else "N/A")
+
+    # Backward compatibility and chart data
     mixture = {k: _round3(v) for k, v in p.items()}
     components = [{"name": k, "weight": _round3(v)} for k, v in _top_components(p)]
-    emoji_list = _emoji_for(final_single)
     present = _present_subset(p, eps=0.03)
 
+    same_label = dominant_title == final_single
+    rationale = _rationale(p, dominant_lower, final_single, blended)
+
+    # Assemble output
     base.update(
         {
+            # Scores
             "anger": raw["anger"],
             "disgust": raw["disgust"],
             "fear": raw["fear"],
@@ -300,14 +339,28 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
             "sadness": raw["sadness"],
             "passion": raw["passion"],
             "surprise": raw["surprise"],
+
+            # Labels
             "blended_emotion": blended,
-            "emotion": final_single,
+            "emotion": final_single,                 # rich single label
             "confidence": _round3(conf),
-            "mixture": mixture,
-            "present": present,
-            "components": components,
-            "emoji": emoji_list,
-            "emoji_primary": emoji_list[0] if emoji_list else "🤔",
+
+            # Charting
+            "mixture": mixture,                      # normalized seven-way for bars
+            "present": present,                      # nontrivial components only
+            "components": components,                # sorted list for debugging or tables
+
+            # Emojis
+            "emoji_emotion": emoji_emotion,          # for rich label
+            "emoji_dominant": emoji_dominant,        # for dominant core
+            "same_label": same_label,                # UI can collapse to one emoji if True
+
+            # Narrative
+            "rationale": rationale,
+
+            # Backward compatibility
+            "emoji": emoji_emotion,
+            "emoji_primary": emoji_emotion[0] if emoji_emotion else "🤔",
         }
     )
     return base
