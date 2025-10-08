@@ -18,6 +18,16 @@
         --border:rgba(255,255,255,.08);
         --shadow:0 10px 30px rgba(2,6,23,.35);
         --radius:16px;
+
+        /* chart palette */
+        --c-anger:#f87171;
+        --c-disgust:#34d399;
+        --c-fear:#60a5fa;
+        --c-joy:#fde047;
+        --c-sadness:#93c5fd;
+        --c-passion:#fb7185;
+        --c-surprise:#a78bfa;
+        --bar-bg:rgba(255,255,255,.08);
       }
       [data-theme="light"]{
         --ink:#0b1220; --muted:#475569;
@@ -27,6 +37,8 @@
         --accent:#2563eb; --accent-2:#60a5fa;
         --border:rgba(2,6,23,.12);
         --shadow:0 10px 30px rgba(2,6,23,.12);
+
+        --bar-bg:rgba(2,6,23,.08);
       }
       *{box-sizing:border-box} html,body{height:100%}
       body{
@@ -97,14 +109,22 @@
         border:1px solid var(--border);border-radius:14px;padding:1rem;font-size:1rem;line-height:1.5;outline:none
       }
       textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.2)}
-      .row{display:flex;align-items:center;gap:.9rem;margin-top:1rem}
+      .row{
+        display:grid;grid-auto-flow:column;align-items:center;gap:.9rem;margin-top:1rem;
+        grid-auto-columns: min-content 1fr min-content;
+      }
       .btn{
         appearance:none;border:none;cursor:pointer;padding:.85rem 1.15rem;border-radius:12px;
         font-weight:800;background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#0b1220
       }
-      .status{font-size:.95rem}
+      .status{grid-column:1/-1;font-size:.95rem}
       .status.err{color:#f43f5e}
       .emojiInline{font-size:1.6rem;display:flex;gap:.35rem;align-items:center;min-height:1.6rem}
+
+      /* emojis flanking the button */
+      .emojiLeft, .emojiRight{
+        width:3rem;display:flex;justify-content:center;align-items:center;
+      }
 
       /* ===================== PANELS ===================== */
       .panelTitle{margin:.25rem 0 1rem 0;font-weight:800;letter-spacing:.15px}
@@ -113,6 +133,23 @@
       .value{min-width:4.5rem;text-align:right;background:var(--surface-2);border:1px solid var(--border);padding:.55rem .7rem;border-radius:12px;font-variant-numeric:tabular-nums}
       .meta{display:grid;grid-template-columns:1fr auto;gap:.55rem 1rem}
       .meta .label{color:var(--muted);font-weight:600}
+
+      /* ===================== BAR CHART ===================== */
+      .chartCard{margin-top:1rem}
+      .barRow{
+        display:grid;grid-template-columns:110px 1fr 64px;gap:.6rem;align-items:center;margin:.35rem 0;
+      }
+      .barLabel{
+        font-weight:700;color:var(--muted);
+      }
+      .barTrack{
+        height:14px;border-radius:999px;background:var(--bar-bg);position:relative;overflow:hidden;border:1px solid var(--border)
+      }
+      .barFill{
+        position:absolute;inset:0 100% 0 0;border-radius:999px;box-shadow:inset 0 0 12px rgba(0,0,0,.15);
+        transition:width .45s cubic-bezier(.2,.9,.2,1);
+      }
+      .barValue{font-variant-numeric:tabular-nums;text-align:right;color:var(--ink)}
 
       footer{margin-top:2.2rem;color:var(--muted);text-align:center;font-size:.9rem}
 
@@ -154,14 +191,23 @@
 
       <!-- Symmetrical two-column grid -->
       <section class="grid">
-        <!-- Left: Input -->
+        <!-- Left: Input and Chart -->
         <div class="card">
           <label for="text">Text</label>
           <textarea id="text" placeholder="Type a short passage. For example: I am grateful and excited to begin something new today."></textarea>
+
+          <!-- Button flanked by emojis -->
           <div class="row">
+            <span id="emojiDominant" class="emojiInline emojiLeft" aria-live="polite" title="Dominant core">🤔</span>
             <button id="analyze" class="btn">Analyze</button>
-            <span id="emojiInline" class="emojiInline" aria-live="polite">🤔</span>
+            <span id="emojiEmotion" class="emojiInline emojiRight" aria-live="polite" title="Blended emotion">🤔</span>
             <span id="status" class="status" aria-live="polite"></span>
+          </div>
+
+          <!-- Chart -->
+          <div class="card chartCard" aria-label="Core mixture bar chart">
+            <div class="panelTitle">Core mixture</div>
+            <div id="bars"></div>
           </div>
         </div>
 
@@ -199,15 +245,13 @@
         <h2 id="modalTitle">About In tuned</h2>
         <p class="muted">Description:</p>
         <p>
-          A simple reflection tool to help you process how you feel in the moment.
+          A reflection tool to help you process how you feel in the moment.
           Write your thoughts; treat the output as a prompt for self-awareness,
           not advice.
         </p>
         <p class="muted" style="margin-top:.65rem">How it works:</p>
         <p>
-          Your text is analyzed across seven core emotions (Anger, Disgust, Fear, Joy,
-          Sadness, Passion, Surprise). We show the dominant core and a final single-label
-          emotion derived from the mixture to best match the current state you expressed.
+          Your text is analyzed across seven core emotions. We show the dominant core and a single blended label that best fits the mixture.
         </p>
         <div class="actions">
           <button id="closeModal" class="ghost">Done</button>
@@ -230,11 +274,12 @@
         emotion: $('v-emotion'),
       };
 
-      const emojiInline = $('emojiInline');
+      const emojiDominant = $('emojiDominant');
+      const emojiEmotion  = $('emojiEmotion');
 
       const titleCase = (s) => {
         if (!s || typeof s !== 'string') return 'N/A';
-        if (s.toUpperCase() === s) return s; // N/A, etc.
+        if (s.toUpperCase() === s) return s;
         return s.charAt(0).toUpperCase() + s.slice(1);
       };
 
@@ -243,8 +288,91 @@
         s.textContent = text || '';
         s.className = 'status' + (isError ? ' err' : '');
       }
+
       const fmt = v => typeof v === 'number' ? v.toFixed(3) : String(v ?? '');
 
+      // Chart helpers
+      const CORE_ORDER = ["anger","disgust","fear","joy","sadness","passion","surprise"];
+      const CORE_LABEL = {
+        anger:"Anger", disgust:"Disgust", fear:"Fear", joy:"Joy",
+        sadness:"Sadness", passion:"Passion", surprise:"Surprise"
+      };
+      const CORE_COLOR = {
+        anger:"var(--c-anger)",
+        disgust:"var(--c-disgust)",
+        fear:"var(--c-fear)",
+        joy:"var(--c-joy)",
+        sadness:"var(--c-sadness)",
+        passion:"var(--c-passion)",
+        surprise:"var(--c-surprise)"
+      };
+
+      function initBars(){
+        const container = $('bars');
+        container.innerHTML = '';
+        CORE_ORDER.forEach(key=>{
+          const row = document.createElement('div');
+          row.className = 'barRow';
+
+          const label = document.createElement('div');
+          label.className = 'barLabel';
+          label.textContent = CORE_LABEL[key];
+
+          const track = document.createElement('div');
+          track.className = 'barTrack';
+
+          const fill = document.createElement('div');
+          fill.className = 'barFill';
+          fill.style.background = CORE_COLOR[key];
+          fill.style.width = '0%';
+          fill.id = `bar-${key}`;
+
+          track.appendChild(fill);
+
+          const value = document.createElement('div');
+          value.className = 'barValue';
+          value.id = `barv-${key}`;
+          value.textContent = '0.0%';
+
+          row.appendChild(label);
+          row.appendChild(track);
+          row.appendChild(value);
+          container.appendChild(row);
+        });
+      }
+
+      function renderBars(mixture){
+        if (!mixture || typeof mixture !== 'object') return;
+        CORE_ORDER.forEach(key=>{
+          const v = Number(mixture[key]) || 0;
+          const pct = Math.max(0, Math.min(100, v*100));
+          const fill = $(`bar-${key}`);
+          const val  = $(`barv-${key}`);
+          if (fill) fill.style.width = `${pct}%`;
+          if (val)  val.textContent = `${pct.toFixed(1)}%`;
+        });
+      }
+
+      function renderEmojis(payload){
+        const same = !!payload.same_label;
+        const emoEm = Array.isArray(payload.emoji_emotion) ? payload.emoji_emotion : [];
+        const emoDom = Array.isArray(payload.emoji_dominant) ? payload.emoji_dominant : [];
+
+        // If same label, show only one emoji on the right and clear the left
+        if (same) {
+          emojiDominant.textContent = '';
+          emojiEmotion.textContent  = emoEm.length ? emoEm.join(' ') : '🤔';
+          emojiEmotion.title = 'Dominant and blended match';
+          return;
+        }
+        // Otherwise show both sides
+        emojiDominant.textContent = emoDom.length ? emoDom[0] : '🤔';
+        emojiEmotion.textContent  = emoEm.length ? emoEm.join(' ') : '🤔';
+        emojiDominant.title = 'Dominant core';
+        emojiEmotion.title  = 'Blended emotion';
+      }
+
+      // Analyze click
       $('analyze').addEventListener('click', async ()=>{
         const text = $('text').value.trim();
         if (!text) { setStatus('Please enter some text.'); return; }
@@ -266,13 +394,23 @@
           fields.passion.textContent  = fmt(data.passion ?? 0);
           fields.surprise.textContent = fmt(data.surprise ?? 0);
 
-          // Capitalize result labels
+          // Labels
           fields.dominant_emotion.textContent = titleCase(data.dominant_emotion || 'N/A');
           fields.emotion.textContent          = titleCase(data.emotion || 'N/A');
 
-          // Emoji near Analyze
-          const em = Array.isArray(data.emoji) ? data.emoji : [];
-          emojiInline.textContent = em.length ? em.join(' ') : '🤔';
+          // Emojis
+          renderEmojis({
+            emoji_emotion: data.emoji_emotion || data.emoji || [],
+            emoji_dominant: data.emoji_dominant || [],
+            same_label: !!data.same_label
+          });
+
+          // Chart
+          const mix = data.mixture || {
+            anger:data.anger, disgust:data.disgust, fear:data.fear, joy:data.joy,
+            sadness:data.sadness, passion:data.passion, surprise:data.surprise
+          };
+          renderBars(mix);
 
           setStatus('');
         }catch(err){
@@ -284,7 +422,11 @@
               fields[k].textContent = '0.000';
             }
           }
-          emojiInline.textContent = '🤔';
+          emojiDominant.textContent = '🤔';
+          emojiEmotion.textContent  = '🤔';
+          renderBars({
+            anger:0,disgust:0,fear:0,joy:0,sadness:0,passion:0,surprise:0
+          });
         }
       });
 
@@ -294,7 +436,7 @@
       $('closeModal').addEventListener('click', ()=> overlay.classList.remove('show'));
       overlay.addEventListener('click', (e)=>{ if (e.target === overlay) overlay.classList.remove('show'); });
 
-      // Theme toggle (glowing dot)
+      // Theme toggle
       const modeDot = $('modeDot');
       const root = document.documentElement;
       const setTheme = (t)=> root.setAttribute('data-theme', t);
@@ -310,6 +452,12 @@
         const saved = localStorage.getItem('in-tuned-theme');
         if (saved) setTheme(saved);
       } catch {}
+
+      // Build empty chart on load
+      initBars();
+      renderBars({
+        anger:0,disgust:0,fear:0,joy:0,sadness:0,passion:0,surprise:0
+      });
     </script>
   </body>
 </html>
