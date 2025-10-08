@@ -151,7 +151,8 @@ def _single_state_overrides(p: Dict[str, float]) -> Optional[str]:
 
     if sad >= 0.65 and joy <= 0.20:
         return "Mourning"
-    if pas >= 0.55 and joy >= 0.25:
+    # -- Relaxed passion+joy rule so short texts like "I'm in love" resolve correctly
+    if (pas >= 0.50 and joy >= 0.22) or ((pas + joy) >= 0.70 and abs(pas - joy) <= 0.08):
         return "In love"
     if pas >= 0.65 and sad >= 0.25 and joy <= 0.25:
         return "Longing"
@@ -206,12 +207,19 @@ def _best_prototype_label(p: Dict[str, float]) -> Tuple[str, float]:
     return best_label, best_sim
 
 def _final_emotion_label(p: Dict[str, float]) -> str:
+    # Deterministic overrides first (now includes relaxed Passion+Joy rule)
     single = _single_state_overrides(p)
     if single:
         return single
 
+    # If top two are Passion & Joy and reasonably strong, call it "In love".
+    ranked = _top_components(p)
+    (k1, v1), (k2, v2) = ranked[0], ranked[1]
+    if {"passion", "joy"} == {k1, k2} and (v1 + v2) >= 0.60 and abs(v1 - v2) <= 0.20:
+        return "In love"
+
+    # Prototype space (rich labels)
     conf = _confidence(p)
-    k1, v1 = _top_components(p)[0]
     if v1 >= 0.22 and conf >= 0.15:
         label, sim = _best_prototype_label(p)
         if sim >= 0.72:
