@@ -109,22 +109,18 @@
         border:1px solid var(--border);border-radius:14px;padding:1rem;font-size:1rem;line-height:1.5;outline:none
       }
       textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.2)}
+
+      /* Left-align the action row; emojis appear directly after the button */
       .row{
-        display:grid;grid-auto-flow:column;align-items:center;gap:.9rem;margin-top:1rem;
-        grid-auto-columns: min-content 1fr min-content;
+        display:flex; align-items:center; gap:.6rem; margin-top:1rem; flex-wrap:wrap;
       }
       .btn{
         appearance:none;border:none;cursor:pointer;padding:.85rem 1.15rem;border-radius:12px;
         font-weight:800;background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#0b1220
       }
-      .status{grid-column:1/-1;font-size:.95rem}
-      .status.err{color:#f43f5e}
       .emojiInline{font-size:1.6rem;display:flex;gap:.35rem;align-items:center;min-height:1.6rem}
-
-      /* emojis flanking the button */
-      .emojiLeft, .emojiRight{
-        width:3rem;display:flex;justify-content:center;align-items:center;
-      }
+      .status{flex-basis:100%;font-size:.95rem}
+      .status.err{color:#f43f5e}
 
       /* ===================== PANELS ===================== */
       .panelTitle{margin:.25rem 0 1rem 0;font-weight:800;letter-spacing:.15px}
@@ -139,9 +135,7 @@
       .barRow{
         display:grid;grid-template-columns:110px 1fr 64px;gap:.6rem;align-items:center;margin:.35rem 0;
       }
-      .barLabel{
-        font-weight:700;color:var(--muted);
-      }
+      .barLabel{font-weight:700;color:var(--muted)}
       .barTrack{
         height:14px;border-radius:999px;background:var(--bar-bg);position:relative;overflow:hidden;border:1px solid var(--border)
       }
@@ -196,11 +190,11 @@
           <label for="text">Text</label>
           <textarea id="text" placeholder="Type a short passage. For example: I am grateful and excited to begin something new today."></textarea>
 
-          <!-- Button flanked by emojis -->
+          <!-- Button with emojis to its right (dominant first, then rich emotion) -->
           <div class="row">
-            <span id="emojiDominant" class="emojiInline emojiLeft" aria-live="polite" title="Dominant core">🤔</span>
             <button id="analyze" class="btn">Analyze</button>
-            <span id="emojiEmotion" class="emojiInline emojiRight" aria-live="polite" title="Blended emotion">🤔</span>
+            <span id="emojiDominant" class="emojiInline" aria-live="polite" title="Dominant core">🤔</span>
+            <span id="emojiEmotion" class="emojiInline" aria-live="polite" title="Blended emotion">🤔</span>
             <span id="status" class="status" aria-live="polite"></span>
           </div>
 
@@ -353,22 +347,22 @@
         });
       }
 
+      // Emojis: dominant first, then rich emotion; collapse to one if same
       function renderEmojis(payload){
         const same = !!payload.same_label;
         const emoEm = Array.isArray(payload.emoji_emotion) ? payload.emoji_emotion : [];
         const emoDom = Array.isArray(payload.emoji_dominant) ? payload.emoji_dominant : [];
 
-        // If same label, show only one emoji on the right and clear the left
         if (same) {
-          emojiDominant.textContent = '';
-          emojiEmotion.textContent  = emoEm.length ? emoEm.join(' ') : '🤔';
-          emojiEmotion.title = 'Dominant and blended match';
+          emojiDominant.textContent = emoEm.length ? emoEm.join(' ') : '🤔';
+          emojiDominant.title = 'Dominant and blended match';
+          emojiEmotion.textContent  = '';
+          emojiEmotion.title = '';
           return;
         }
-        // Otherwise show both sides
         emojiDominant.textContent = emoDom.length ? emoDom[0] : '🤔';
-        emojiEmotion.textContent  = emoEm.length ? emoEm.join(' ') : '🤔';
         emojiDominant.title = 'Dominant core';
+        emojiEmotion.textContent  = emoEm.length ? emoEm.join(' ') : '🤔';
         emojiEmotion.title  = 'Blended emotion';
       }
 
@@ -398,7 +392,7 @@
           fields.dominant_emotion.textContent = titleCase(data.dominant_emotion || 'N/A');
           fields.emotion.textContent          = titleCase(data.emotion || 'N/A');
 
-          // Emojis
+          // Emojis (dominant then emotion)
           renderEmojis({
             emoji_emotion: data.emoji_emotion || data.emoji || [],
             emoji_dominant: data.emoji_dominant || [],
@@ -423,7 +417,7 @@
             }
           }
           emojiDominant.textContent = '🤔';
-          emojiEmotion.textContent  = '🤔';
+          emojiEmotion.textContent  = '';
           renderBars({
             anger:0,disgust:0,fear:0,joy:0,sadness:0,passion:0,surprise:0
           });
