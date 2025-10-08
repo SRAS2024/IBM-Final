@@ -11,12 +11,14 @@ This module converts detector scores into:
 - separate emojis for dominant core and rich emotion
 - a concise rationale string for UI captions
 - backward-compatible fields for existing callers
+
+Compatible with detector.py (contrast-aware / near-tie dominance).
 """
 from __future__ import annotations
 
 import math
-from dataclasses import asdict
-from typing import Dict, List, Tuple, Optional
+from dataclasses import asdict, is_dataclass
+from typing import Dict, List, Tuple, Optional, Any
 
 from .detector import EmotionResult
 
@@ -268,6 +270,37 @@ def _present_subset(p: Dict[str, float], eps: float = 0.03) -> Dict[str, float]:
     items.sort(key=lambda kv: kv[1], reverse=True)
     return {k: _round3(v) for k, v in items}
 
+# ------------------------- input normalization -------------------------
+
+def _result_to_dict(result: Any) -> Dict[str, Any]:
+    """Accept EmotionResult dataclass or a mapping with compatible keys."""
+    if is_dataclass(result):
+        return asdict(result)
+    if isinstance(result, dict):
+        return dict(result)
+    # Last resort: try attribute access (duck-typing)
+    out = {}
+    for k in ["anger", "disgust", "fear", "joy", "sadness", "passion", "surprise", "dominant_emotion"]:
+        out[k] = float(getattr(result, k)) if hasattr(result, k) else 0.0
+    if "dominant_emotion" not in out:
+        out["dominant_emotion"] = ""
+    return out
+
+def _ensure_score_keys(base: Dict[str, Any]) -> Dict[str, Any]:
+    for k in EMOTIONS:
+        base[k] = float(base.get(k, 0.0) or 0.0)
+    base["dominant_emotion"] = (base.get("dominant_emotion") or "") if isinstance(base.get("dominant_emotion"), str) else ""
+    return base
+
+def _fallback_dominant_if_missing(raw: Dict[str, float], existing: str) -> str:
+    """If detector didn't provide dominant_emotion, choose the max of the normalized mix."""
+    existing = existing or ""
+    if existing:
+        return existing
+    p = _normalize(raw)
+    top = max(p.items(), key=lambda kv: kv[1])[0] if p else "N/A"
+    return top
+
 # ------------------------- rationale -------------------------
 
 def _rationale(p: Dict[str, float], dominant_lower: str, emotion_label: str, blended_label: str) -> str:
@@ -282,7 +315,7 @@ def _rationale(p: Dict[str, float], dominant_lower: str, emotion_label: str, ble
 
 # ------------------------- public formatter -------------------------
 
-def format_emotions(result: EmotionResult) -> Dict[str, object]:
+def format_emotions(result: EmotionResult | Dict[str, Any]) -> Dict[str, object]:
     """Return a dict with seven raw scores and presentation metadata.
 
     Output keys:
@@ -301,7 +334,8 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
       emoji          # alias of emoji_emotion for backward compatibility
       emoji_primary  # first item of emoji_emotion for backward compatibility
     """
-    base = asdict(result)
+    base = _result_to_dict(result)
+    base = _ensure_score_keys(base)
 
     # Normalize to a probability-like mixture for charting
     raw = {k: float(max(0.0, base.get(k, 0.0))) for k in EMOTIONS}
@@ -312,8 +346,8 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
     final_single = _final_emotion_label(p)
     conf = _confidence(p)
 
-    # Dominant core from detector is lowercase; title case for emoji map
-    dominant_lower = base.get("dominant_emotion", "") or ""
+    # Dominant core from detector is lowercase; fall back if missing
+    dominant_lower = _fallback_dominant_if_missing(raw, base.get("dominant_emotion", "") or "")
     dominant_title = _title(dominant_lower) if dominant_lower else "N/A"
 
     # Emojis
@@ -341,6 +375,7 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
             "surprise": raw["surprise"],
 
             # Labels
+            "dominant_emotion": dominant_lower or "N/A",
             "blended_emotion": blended,
             "emotion": final_single,                 # rich single label
             "confidence": _round3(conf),
