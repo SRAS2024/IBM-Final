@@ -109,9 +109,11 @@
         border:1px solid var(--border);border-radius:14px;padding:1rem;font-size:1rem;line-height:1.5;outline:none
       }
       textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 4px rgba(59,130,246,.2)}
+
+      /* LEFT-ALIGNED button + emojis */
       .row{
-        display:grid;grid-auto-flow:column;align-items:center;gap:.9rem;margin-top:1rem;
-        grid-auto-columns: min-content 1fr min-content;
+        display:grid;align-items:center;gap:.9rem;margin-top:1rem;
+        grid-template-columns:auto auto auto 1fr; /* left emoji, button, right emoji, spacer */
       }
       .btn{
         appearance:none;border:none;cursor:pointer;padding:.85rem 1.15rem;border-radius:12px;
@@ -120,11 +122,7 @@
       .status{grid-column:1/-1;font-size:.95rem}
       .status.err{color:#f43f5e}
       .emojiInline{font-size:1.6rem;display:flex;gap:.35rem;align-items:center;min-height:1.6rem}
-
-      /* emojis flanking the button */
-      .emojiLeft, .emojiRight{
-        width:3rem;display:flex;justify-content:center;align-items:center;
-      }
+      .emojiLeft,.emojiRight{width:2.2rem;display:flex;justify-content:center;align-items:center;}
 
       /* ===================== PANELS ===================== */
       .panelTitle{margin:.25rem 0 1rem 0;font-weight:800;letter-spacing:.15px}
@@ -139,9 +137,7 @@
       .barRow{
         display:grid;grid-template-columns:110px 1fr 64px;gap:.6rem;align-items:center;margin:.35rem 0;
       }
-      .barLabel{
-        font-weight:700;color:var(--muted);
-      }
+      .barLabel{font-weight:700;color:var(--muted)}
       .barTrack{
         height:14px;border-radius:999px;background:var(--bar-bg);position:relative;overflow:hidden;border:1px solid var(--border)
       }
@@ -319,11 +315,35 @@
         "Moral outrage":["😤"], "Schadenfreude":["😏"], "Embarrassed amusement":["😅"],
         "Melancholy":["🎻"], "Nostalgia":["🕰️","🙂"]
       };
-      const emojiForLabel = (label) => {
-        const key = titleCase(label || 'N/A');
-        return EMOJI_SUGGEST[key] || ["🤔"];
-      };
-      const emojiForCore = (core) => emojiForLabel(core); // same keys for cores
+      const emojiForLabel = (label) => EMOJI_SUGGEST[titleCase(label || 'N/A')] || ["🤔"];
+      const emojiForCore  = (core)  => emojiForLabel(core);
+
+      // ---- Fallback rich-emotion selection (mirrors server rules) ----
+      function normalizeMix(m){
+        const keys = ["anger","disgust","fear","joy","sadness","passion","surprise"];
+        let sum = 0;
+        const out = {};
+        keys.forEach(k => { out[k] = Math.max(0, Number(m[k] ?? 0)); sum += out[k]; });
+        if (sum <= 0){ keys.forEach(k => out[k] = 1/keys.length); return out; }
+        keys.forEach(k => out[k] = out[k]/sum);
+        return out;
+      }
+      function topTwo(mix){
+        return Object.entries(mix).sort((a,b)=>b[1]-a[1]).slice(0,2);
+      }
+      function fallbackEmotionLabel(mix){
+        const p = normalizeMix(mix);
+        const A=p.anger,D=p.disgust,F=p.fear,J=p.joy,S=p.sadness,P=p.passion,U=p.surprise;
+        // deterministic overrides similar to formatter
+        if (S >= 0.65 && J <= 0.20) return "Mourning";
+        if ((P >= 0.50 && J >= 0.22) || ((P+J) >= 0.60 && Math.abs(P-J) <= 0.20)) return "In love";
+        if (U >= 0.50 && F >= 0.25) return "Shocked";
+        if (U >= 0.45 && J >= 0.25) return "Awe";
+        if (U >= 0.45 && A >= 0.25) return "Outrage";
+        // otherwise mirror dominant
+        const [[k1]] = topTwo(p);
+        return titleCase(k1);
+      }
 
       function initBars(){
         const container = $('bars');
@@ -371,19 +391,23 @@
         });
       }
 
-      function renderEmojis({emoji_emotion, emoji_dominant, same_label, dominant_label, emotion_label}){
-        // Ensure we ALWAYS have emojis even if server omits arrays
-        const domArr = Array.isArray(emoji_dominant) && emoji_dominant.length
+      function renderEmojis({emoji_emotion, emoji_dominant, same_label, dominant_label, emotion_label, mixture_for_fallback}){
+        const domArr = (Array.isArray(emoji_dominant) && emoji_dominant.length)
           ? emoji_dominant
           : emojiForCore(dominant_label);
 
-        const emoArr = Array.isArray(emoji_emotion) && emoji_emotion.length
+        // If server didn't give a rich emotion, compute a robust fallback from the mixture
+        let finalEmotionLabel = emotion_label && emotion_label !== 'N/A'
+          ? emotion_label
+          : fallbackEmotionLabel(mixture_for_fallback || {});
+
+        const emoArr = (Array.isArray(emoji_emotion) && emoji_emotion.length)
           ? emoji_emotion
-          : emojiForLabel(emotion_label);
+          : emojiForLabel(finalEmotionLabel);
 
         const same = (typeof same_label === 'boolean')
           ? same_label
-          : titleCase(dominant_label) === titleCase(emotion_label);
+          : titleCase(dominant_label) === titleCase(finalEmotionLabel);
 
         if (same) {
           emojiDominant.textContent = '';
@@ -421,7 +445,15 @@
 
           // Labels
           const domLabel = titleCase(data.dominant_emotion || 'N/A');
-          const emoLabel = titleCase(data.emotion || 'N/A');
+          // Use server rich emotion if present; otherwise compute fallback from mixture
+          const mix = data.mixture || {
+            anger:data.anger, disgust:data.disgust, fear:data.fear, joy:data.joy,
+            sadness:data.sadness, passion:data.passion, surprise:data.surprise
+          };
+          let emoLabel = titleCase(data.emotion || '');
+          if (!emoLabel || emoLabel === 'N/A') {
+            emoLabel = titleCase(fallbackEmotionLabel(mix));
+          }
           fields.dominant_emotion.textContent = domLabel;
           fields.emotion.textContent          = emoLabel;
 
@@ -431,15 +463,12 @@
             emoji_dominant: data.emoji_dominant || [],
             same_label:     (typeof data.same_label === 'boolean') ? data.same_label : undefined,
             dominant_label: domLabel,
-            emotion_label:  emoLabel
+            emotion_label:  emoLabel,
+            mixture_for_fallback: mix
           });
 
           // Chart
-          const mix = data.mixture || {
-            anger:data.anger, disgust:data.disgust, fear:data.fear, joy:data.joy,
-            sadness:data.sadness, passion:data.passion, surprise:data.surprise
-          };
-          renderBars(mix);
+          renderBars(normalizeMix(mix));
 
           setStatus('');
         }catch(err){
