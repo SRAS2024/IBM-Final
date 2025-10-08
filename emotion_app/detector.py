@@ -6,12 +6,10 @@
 #
 # Design goals
 # 1) Keep the seven core scores (anger, disgust, fear, joy, sadness, passion, surprise).
-# 2) Improve robustness for short texts, mixed clauses, and colloquial language.
-# 3) Add specialized detectors for desire and commitment phrases
-#    so inputs like "I want to marry her" express passion and joy, not anger.
-# 4) Expand lexical coverage with stems, phrases, idioms, emoji, and punctuation.
-# 5) Use light heuristics only. No third party ML required. Pure standard library.
-# 6) Deterministic and side effect free. Cache small helpers for speed.
+# 2) Robust multi-sentence analysis up to twelve sentences, then clauses.
+# 3) Specialized detectors for desire and commitment phrases.
+# 4) Broaden lexical coverage with stems, phrases, idioms, emoji, and punctuation.
+# 5) Pure standard library heuristics. Deterministic and side effect free.
 
 from __future__ import annotations
 
@@ -185,7 +183,6 @@ INTENT_COMMIT = {
 INTENT_DESIRE = {
     "i want", "i wanna", "i would love", "i like", "i love", "i adore",
     "i need", "cant wait", "can't wait", "dying to", "itching to",
-    # Added strong passion-desire patterns:
     "i'm in love", "im in love", "i am in love", "in love with",
     "falling in love", "fell in love",
 }
@@ -219,7 +216,6 @@ PHRASES: List[Tuple[str, str, float]] = [
     ("head over heels", "passion", 2.0),
     ("butterflies in my stomach", "passion", 1.6),
     ("madly in love", "passion", 2.0),
-    # >>> Added generic and common "in love" variants with strong passion weight
     ("in love", "passion", 2.2),
     ("i'm in love", "passion", 2.4),
     ("im in love", "passion", 2.4),
@@ -227,11 +223,9 @@ PHRASES: List[Tuple[str, str, float]] = [
     ("in love with", "passion", 2.3),
     ("falling in love", "passion", 2.1),
     ("fell in love", "passion", 2.1),
-    # Surprise
     ("i could not believe", "surprise", 1.7),
     ("i can't believe", "surprise", 1.7),
     ("could not believe", "surprise", 1.7),
-    # Commitment
     ("i want to marry", "passion", 2.0),
     ("i want to marry you", "passion", 2.2),
     ("i want to marry her", "passion", 2.2),
@@ -274,8 +268,7 @@ NEGATED_PAIRS = {
     ("not", "angry"): ("anger", "fear", 0.8),
     ("no", "love"): ("passion", "sadness", 1.0),
     ("not", "inlove"): ("passion", "sadness", 1.0),
-    # handle spaced bigram: "not in love"
-    ("not", "in"): ("passion", "sadness", 0.9),
+    ("not", "in"): ("passion", "sadness", 0.9),  # handles "not in love"
 }
 
 # Regex for simple tokenization.
@@ -337,6 +330,67 @@ def _approx_correction(stem: str) -> str:
         return MISSPELLINGS[stem]
     matches = difflib.get_close_matches(stem, APPROX_TARGETS, n=1, cutoff=0.90)
     return matches[0] if matches else stem
+
+
+# =============================================================================
+# Sentence and clause splitting
+# =============================================================================
+
+_SENT_ENDERS = {".", "!", "?", "?!", "!?","\n"}
+
+def _split_sentences_from_tokens(tokens: List[str], max_sentences: int = 12) -> List[List[str]]:
+    """Split tokens into sentences. Cap at 12; merge overflow into the last sentence."""
+    if not tokens:
+        return [[]]
+    sents: List[List[str]] = []
+    current: List[str] = []
+    for i, t in enumerate(tokens):
+        current.append(t)
+        if t in _SENT_ENDERS or (t == ";" and len(current) >= 6):
+            sents.append(current)
+            current = []
+    if current:
+        sents.append(current)
+    if not sents:
+        sents = [tokens[:]]
+
+    if len(sents) <= max_sentences:
+        return sents
+
+    # Merge any overflow into the twelfth sentence to preserve information
+    keep = sents[:max_sentences]
+    overflow: List[str] = []
+    for s in sents[max_sentences:]:
+        overflow.extend(s)
+    keep[-1].extend(overflow)
+    return keep
+
+
+def _split_clauses_in_sentence(sent_tokens: List[str]) -> List[List[str]]:
+    """Split a sentence into clauses on contrastive markers and strong commas."""
+    if not sent_tokens:
+        return [[]]
+    clauses: List[List[str]] = []
+    current: List[str] = []
+    for i, t in enumerate(sent_tokens):
+        # Clause break on explicit discourse markers
+        if t in CONTRASTIVE:
+            if current:
+                clauses.append(current)
+            current = []
+            continue
+        # Clause break on comma/semicolon if current is long enough to stand alone
+        if t in {",", ";", ":"} and len(current) >= 6:
+            current.append(t)
+            clauses.append(current)
+            current = []
+            continue
+        current.append(t)
+
+    if current:
+        clauses.append(current)
+
+    return clauses or [sent_tokens]
 
 
 # =============================================================================
@@ -468,7 +522,7 @@ def _arousal_valence_nudge(scores: Dict[str, float]) -> None:
 
 
 # =============================================================================
-# Clause scorers
+# Clause and sentence scorers
 # =============================================================================
 
 def _desire_commitment_bonus(text_lower: str) -> Dict[str, float]:
@@ -478,11 +532,9 @@ def _desire_commitment_bonus(text_lower: str) -> Dict[str, float]:
         out["passion"] += 2.3
         out["joy"] += 0.6
         out["anger"] -= 0.4
-    # Desire / affection
     if any(p in text_lower for p in INTENT_DESIRE):
-        out["passion"] += 1.6   # increased so passion wins vs JOY "love" lex hit
+        out["passion"] += 1.6
         out["joy"] += 0.4
-    # A very common minimal form: just the bigram "in love"
     if " in love" in text_lower or text_lower.startswith("in love"):
         out["passion"] += 2.2
         out["joy"] += 0.4
@@ -496,7 +548,12 @@ def _desire_commitment_bonus(text_lower: str) -> Dict[str, float]:
     return out
 
 
+def _scope_has_negation(win_before: Iterable[str]) -> bool:
+    return any(wt in NEGATIONS or wt.endswith("n't") for wt in win_before)
+
+
 def _score_clause(tokens: List[str]) -> Dict[str, float]:
+    """Score a single clause with lexical, emoji, punctuation, and intent cues."""
     scores = _blank_scores()
     n_alpha = 0
 
@@ -511,6 +568,7 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
         if raw.isalpha():
             n_alpha += 1
 
+        # Direct emoji
         _merge(scores, _emoji_boost(raw))
 
         stem = _approx_correction(stem)
@@ -518,27 +576,35 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
         if any(base.values()):
             weight = 1.0
 
+            # Context windows for local modifiers
             win = list(_window(tokens, i, size=3))
+
+            # Intensifiers, dampeners, hedges
             if any(wt in INTENSIFIERS for wt in win): weight *= 1.35
             if any(wt in DAMPENERS for wt in win): weight *= 0.65
             if any(wt in HEDGES for wt in win): weight *= 0.88
 
-            if any(wt in NEGATIONS or wt.endswith("n't") for wt in win):
+            # Negation scope
+            if _scope_has_negation(win):
                 weight *= -0.9
 
+            # Temporal and first person stance
             if any(wt in TEMPORAL_POS for wt in win): weight *= 1.05
             if any(wt in TEMPORAL_NEG for wt in win): weight *= 0.95
             if any(wt in STANCE_1P for wt in win): weight *= 1.05
 
+            # Punctuation emphasis and shouting
             tail = "".join(tokens[i:i + 4])
             weight *= _punctuation_emphasis(tail)
             if raw.isalpha() and len(raw) >= 3 and raw.upper() == raw:
                 weight *= 1.1
 
+            # Apply base with computed weight
             for k, v in base.items():
                 if v:
                     scores[k] += v * weight
 
+    # Global clause cues
     rq_boost = _rhetorical_question_boost(tokens)
     if rq_boost:
         scores["fear"] += rq_boost
@@ -546,6 +612,7 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
     s_damp = _because_clause_dampener(tokens)
     scores["surprise"] *= s_damp
 
+    # Redirect negative residues to opposites, then zero them
     for emo, opp in [
         ("joy", "sadness"),
         ("fear", "anger"),
@@ -559,33 +626,41 @@ def _score_clause(tokens: List[str]) -> Dict[str, float]:
             scores[opp] += abs(scores[emo]) * 0.6
             scores[emo] = 0.0
 
+    # Mild punctuation nudges
     if "?" in tokens:
         scores["fear"] += 0.2
         scores["joy"] *= 0.98
     if any(p in tokens for p in ("!", "!!")):
         scores["anger"] += 0.03
 
+    # First person increases salience slightly
     if any(t in STANCE_1P for t in tokens):
         for k in scores:
             scores[k] *= 1.03
 
+    # Sarcasm dampens joy
     if _sarcasm_cue(tokens):
         scores["joy"] *= 0.6
 
+    # Shouting cue across clause
     text_seg = "".join(tokens)
     if re.search(r"\b[A-Z]{4,}\b", text_seg):
         scores["anger"] *= 1.07
         scores["joy"] *= 1.05
 
+    # Length normalization
     denom = max(n_alpha, 1)
     for k in CORE_KEYS:
         scores[k] = scores[k] / denom
 
+    # Structured negated pairs like "not happy"
     _apply_negated_pairs(tokens, scores)
 
+    # Surprise punctuation bonus
     if _surprise_punctuation_bonus("".join(tokens)):
         scores["surprise"] += 0.05
 
+    # Arousal and valence nudges from meta counts
     _arousal_valence_nudge(scores)
 
     return scores
@@ -600,26 +675,25 @@ def _sarcasm_cue(tokens: List[str]) -> bool:
     return any(c in text for c in cues)
 
 
+def _sentence_emphasis_weight(tokens: List[str], idx: int, n_sent: int) -> float:
+    """Compute a soft emphasis weight for a sentence."""
+    text = "".join(tokens)
+    bangs = text.count("!")
+    qmarks = text.count("?")
+    caps_tokens = sum(1 for t in tokens if t.isalpha() and len(t) >= 3 and t.upper() == t)
+    alpha_tokens = sum(1 for t in tokens if t.isalpha())
+    caps_ratio = (caps_tokens / alpha_tokens) if alpha_tokens else 0.0
+
+    punct_boost = 1.0 + min(bangs * 0.03 + qmarks * 0.01, 0.12)
+    caps_boost = 1.0 + min(caps_ratio * 0.20, 0.10)
+    pos_boost = 1.0 + min((idx / max(1, n_sent - 1)) * 0.10, 0.10)  # slightly reward later sentences
+
+    return punct_boost * caps_boost * pos_boost
+
+
 # =============================================================================
 # Aggregation and post processing
 # =============================================================================
-
-def _split_clauses(tokens: List[str]) -> List[List[str]]:
-    if not tokens:
-        return [[]]
-    clauses: List[List[str]] = []
-    current: List[str] = []
-    for t in tokens:
-        if t in CONTRASTIVE:
-            if current:
-                clauses.append(current)
-            current = []
-        else:
-            current.append(t)
-    if current:
-        clauses.append(current)
-    return clauses or [tokens]
-
 
 def _squash(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-4.0 * x))
@@ -632,19 +706,62 @@ def _clamp_scores(raw: Dict[str, float]) -> Dict[str, float]:
     return out
 
 
-def _aggregate_clauses(clauses: List[List[str]]) -> Dict[str, float]:
-    raw = _blank_scores()
-    total_w = 0.0
-    for idx, clause in enumerate(clauses):
-        sc = _score_clause(clause)
-        weight = 1.0 + idx * 0.3
-        total_w += weight
-        for k in CORE_KEYS:
-            raw[k] += sc[k] * weight
-    if total_w == 0:
+def _aggregate_sentence(sent_tokens: List[str]) -> Dict[str, float]:
+    """Aggregate clause scores within a sentence with clause-level emphasis."""
+    clause_scores: List[Tuple[Dict[str, float], float]] = []
+    clauses = _split_clauses_in_sentence(sent_tokens)
+    for cl in clauses:
+        sc = _score_clause(cl)
+        # Clause emphasis: punctuation and length give a soft emphasis
+        tail = "".join(cl[-4:]) if cl else ""
+        emph = _punctuation_emphasis(tail)
+        # Very short clauses get slightly damped to avoid single-phrase bias
+        alpha_len = sum(1 for t in cl if t.isalpha())
+        len_boost = 0.9 if alpha_len <= 3 else 1.0
+        clause_scores.append((sc, emph * len_boost))
+
+    if not clause_scores:
         return _blank_scores()
-    for k in CORE_KEYS:
-        raw[k] /= total_w
+
+    # Weighted average across clauses
+    out = _blank_scores()
+    total_w = sum(w for _, w in clause_scores) or 1.0
+    for sc, w in clause_scores:
+        for k in CORE_KEYS:
+            out[k] += sc[k] * (w / total_w)
+    return out
+
+
+def _aggregate_sentences(sentences: List[List[str]]) -> Dict[str, float]:
+    """Aggregate sentence scores with emphasis and anti dominance smoothing."""
+    if not sentences:
+        return _blank_scores()
+
+    n = len(sentences)
+    per_sent: List[Tuple[Dict[str, float], float]] = []
+    for idx, s in enumerate(sentences):
+        sc = _aggregate_sentence(s)
+        w = _sentence_emphasis_weight(s, idx, n)
+        per_sent.append((sc, w))
+
+    # Normalize weights and apply anti dominance smoothing for many sentences
+    weights = [w for _, w in per_sent]
+    sum_w = sum(weights) or 1.0
+    weights = [w / sum_w for w in weights]
+
+    if n >= 5:
+        # Blend with uniform weights to prevent any one sentence from dominating
+        uni = 1.0 / n
+        weights = [0.6 * w + 0.4 * uni for w in weights]
+
+    # Recompute normalized weights
+    sum_w = sum(weights) or 1.0
+    weights = [w / sum_w for w in weights]
+
+    raw = _blank_scores()
+    for (sc, _), w in zip(per_sent, weights):
+        for k in CORE_KEYS:
+            raw[k] += sc[k] * w
     return raw
 
 
@@ -661,8 +778,8 @@ def _choose_dominant(scores: Dict[str, float]) -> str:
 
 def _augment_watson_with_two(text: str, five: Dict[str, float]) -> Dict[str, float]:
     tokens = _tokens(text)
-    clauses = _split_clauses(tokens)
-    raw = _aggregate_clauses(clauses)
+    sentences = _split_sentences_from_tokens(tokens, max_sentences=12)
+    raw = _aggregate_sentences(sentences)
     passion = max(0.0, min(raw.get("passion", 0.0), 1.0))
     surprise = max(0.0, min(raw.get("surprise", 0.0), 1.0))
     out = dict(five)
@@ -688,8 +805,9 @@ def detect_emotions(text: str, use_watson_if_available: bool = True) -> EmotionR
         if not tokens:
             scores = _blank_scores()
         else:
-            clauses = _split_clauses(tokens)
-            raw = _aggregate_clauses(clauses)
+            sentences = _split_sentences_from_tokens(tokens, max_sentences=12)
+            raw = _aggregate_sentences(sentences)
+            # Global surprise punctuation bonus across the whole text
             raw["surprise"] += _surprise_punctuation_bonus("".join(tokens)) * 0.2
             scores = _clamp_scores(raw)
 
@@ -709,18 +827,37 @@ def detect_emotions(text: str, use_watson_if_available: bool = True) -> EmotionR
 def explain_emotions(text: str, use_watson_if_available: bool = False) -> Dict[str, Any]:
     """Return a debug dictionary with intermediate artifacts for transparency."""
     tokens = _tokens(text)
-    clauses = _split_clauses(tokens)
-    per_clause = []
-    for cl in clauses:
-        per_clause.append(_score_clause(cl))
-    agg = _aggregate_clauses(clauses) if clauses else _blank_scores()
+    sentences = _split_sentences_from_tokens(tokens, max_sentences=12)
+    per_sentence = []
+    per_sentence_weights = []
+    for idx, s in enumerate(sentences):
+        sc_sentence = _aggregate_sentence(s)
+        per_sentence.append({
+            "sentence_tokens": s,
+            "sentence_scores": sc_sentence,
+            "clauses": _split_clauses_in_sentence(s),
+        })
+        per_sentence_weights.append(_sentence_emphasis_weight(s, idx, len(sentences)))
+
+    # Normalize weights like detector path
+    sw = per_sentence_weights[:]
+    total = sum(sw) or 1.0
+    sw = [w / total for w in sw]
+    if len(sw) >= 5:
+        uni = 1.0 / len(sw)
+        sw = [0.6 * w + 0.4 * uni for w in sw]
+    total = sum(sw) or 1.0
+    sw = [w / total for w in sw]
+
+    agg = _aggregate_sentences(sentences) if sentences else _blank_scores()
     agg["surprise"] += _surprise_punctuation_bonus("".join(tokens)) * 0.2
     final = _clamp_scores(agg)
     return {
         "text": text,
         "tokens": tokens,
-        "clauses": clauses,
-        "per_clause_scores": per_clause,
+        "sentences": sentences,
+        "per_sentence": per_sentence,
+        "sentence_weights": sw,
         "aggregate_scores": agg,
         "final_scores": final,
         "dominant": _choose_dominant(final),
