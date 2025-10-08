@@ -236,7 +236,12 @@ INTENSIFIERS = {
 }
 DAMPENERS = {"slightly", "somewhat", "kinda", "kind", "sort", "sorta", "a", "bit", "little", "mildly", "barely"}
 HEDGES = {"maybe", "perhaps", "possibly", "i guess", "i suppose", "i think", "sort of", "kind of", "kinda", "ish"}
-CONTRASTIVE = {"but", "however", "though", "although", "yet", "nevertheless", "nonetheless", "still", "even so"}
+# Broadened contrast markers so we catch more real-world phrasing
+CONTRASTIVE = {
+    "but", "however", "though", "although", "yet",
+    "nevertheless", "nonetheless", "still", "even so",
+    "despite", "even though", "whereas", "regardless"
+}
 TEMPORAL_POS = {"now", "finally", "at last"}
 TEMPORAL_NEG = {"still", "yet", "anymore", "no longer", "any longer"}
 STANCE_1P = {"i", "im", "i'm", "ive", "i've", "me", "my", "mine", "we", "our", "ours"}
@@ -249,7 +254,7 @@ NEGATED_PAIRS = {
     ("not", "angry"): ("anger", "fear", 0.8),
     ("no", "love"): ("passion", "sadness", 1.0),
     ("not", "inlove"): ("passion", "sadness", 1.0),
-    ("not", "in"): ("passion", "sadness", 0.9),
+    ("not", "in"): ("passion", "sadness", 0.9),  # handles "not in love"
 }
 
 TOKEN_RE = re.compile(r"[a-zA-Z']+|[^\w\s]", re.UNICODE)
@@ -498,6 +503,20 @@ def _contains_any(tokens: List[str], bag: set[str], extra: Optional[Iterable[str
             return True
     return False
 
+# Helper predicates for clause polarity
+def _is_positive_clause(tokens: List[str]) -> bool:
+    # Joy/Passion cues (incl. "in love")
+    return _contains_any(tokens, JOY, extra=("in love",)) or _contains_any(tokens, PASSION, extra=("in love",))
+
+def _is_negative_clause(tokens: List[str]) -> bool:
+    # Protective/negative cues
+    return (
+        _contains_any(tokens, FEAR) or
+        _contains_any(tokens, SADNESS) or
+        _contains_any(tokens, ANGER) or
+        _contains_any(tokens, DISGUST)
+    )
+
 def _score_clause(tokens: List[str]) -> Dict[str, float]:
     scores = _blank_scores()
     n_alpha = 0
@@ -627,33 +646,83 @@ def _clamp_scores(raw: Dict[str, float]) -> Dict[str, float]:
         out[k] = max(0.0, min(_squash(v), 1.0))
     return out
 
-# --- NEW: contrast-aware reweighting inside a sentence ---
-_LOVE_CUES = {"love", "loving", "inlove"}
-def _has_love(tokens: List[str]) -> bool:
-    if "in" in tokens and "love" in tokens:
-        return True
-    if "love" in tokens or "loving" in tokens:
-        return True
-    return _contains_any(tokens, JOY, extra=("in love",))
-
-def _has_fear(tokens: List[str]) -> bool:
-    return _contains_any(tokens, FEAR)
-
-def _apply_contrast_bias_if_any(sent_tokens: List[str], clauses: List[List[str]], out: Dict[str, float]) -> None:
-    # Pattern: (fear/sadness) ... but ... (love/passion/joy)  -> emphasize fear as dominant core a bit
-    if "but" not in sent_tokens and "however" not in sent_tokens and "though" not in sent_tokens:
+# --- generalized contrast-aware reweighting inside a sentence ---
+def _apply_contrast_bias_if_any(sent_tokens: List[str],
+                                clauses: List[List[str]],
+                                per_clause_scores: List[Dict[str, float]],
+                                out: Dict[str, float]) -> None:
+    """
+    If a sentence contains a clear contrast (e.g., '... but ...', 'however', 'although', 'even though'),
+    nudge dominance toward protective/negative cores when there is a near balance between
+    negative (fear/sadness/anger/disgust) and positive (joy/passion) clauses.
+    Works for both left-neg→right-pos and left-pos→right-neg.
+    """
+    if not any(c in sent_tokens for c in CONTRASTIVE):
         return
     if len(clauses) < 2:
         return
-    left = clauses[0]
-    right = clauses[1]
-    if _has_fear(left) and (_has_love(right) or _contains_any(right, PASSION, extra=("in love",)) or _contains_any(right, JOY)):
-        out["fear"] *= 1.12
-        out["passion"] *= 0.97
-        out["joy"] *= 0.98
+
+    # Find the first contrast token index to decide left vs right groups
+    toks = sent_tokens
+    try:
+        first_contrast_idx = min(i for i, t in enumerate(toks) if t in CONTRASTIVE)
+    except ValueError:
+        return
+
+    # Aggregate scores by side of the first contrast
+    left_idx_last = 0
+    running_len = 0
+    for ci, cl in enumerate(clauses):
+        running_len += len(cl)
+        if running_len > first_contrast_idx:
+            left_idx_last = max(0, ci - 1)
+            break
+    left_clauses = clauses[:left_idx_last + 1] or [clauses[0]]
+    right_clauses = clauses[left_idx_last + 1:] or [clauses[-1]]
+
+    # Polarity detection (lexical): if either side has clear positive vs negative cues
+    left_pos = any(_is_positive_clause(c) for c in left_clauses)
+    left_neg = any(_is_negative_clause(c) for c in left_clauses)
+    right_pos = any(_is_positive_clause(c) for c in right_clauses)
+    right_neg = any(_is_negative_clause(c) for c in right_clauses)
+
+    # Also look at numeric mixtures we already computed per clause
+    def mix_sum(cl_idxs, keys):
+        s = 0.0
+        for i in cl_idxs:
+            sc = per_clause_scores[i]
+            s += sum(sc.get(k, 0.0) for k in keys)
+        return s
+    left_ids = list(range(0, left_idx_last + 1))
+    right_ids = list(range(left_idx_last + 1, len(clauses)))
+    neg_keys = ("fear", "sadness", "anger", "disgust")
+    pos_keys = ("joy", "passion")
+    left_neg_num = mix_sum(left_ids, neg_keys)
+    right_pos_num = mix_sum(right_ids, pos_keys)
+    left_pos_num = mix_sum(left_ids, pos_keys)
+    right_neg_num = mix_sum(right_ids, neg_keys)
+
+    # Apply bias if we have a clear contrast pattern
+    # Case A: negative → but → positive
+    if (left_neg or left_neg_num > 0) and (right_pos or right_pos_num > 0):
+        # Favor protective cores slightly; dampen positive just a bit
+        for k in ("fear", "sadness", "anger", "disgust"):
+            out[k] *= 1.08
+        for k in ("joy", "passion"):
+            out[k] *= 0.985
+        return
+    # Case B: positive → but → negative (negativity as the conclusion is stronger)
+    if (left_pos or left_pos_num > 0) and (right_neg or right_neg_num > 0):
+        for k in ("fear", "sadness", "anger", "disgust"):
+            out[k] *= 1.12
+        for k in ("joy", "passion"):
+            out[k] *= 0.97
+        return
+
 
 def _aggregate_sentence(sent_tokens: List[str]) -> Dict[str, float]:
     clause_scores: List[Tuple[Dict[str, float], float]] = []
+    numeric_by_clause: List[Dict[str, float]] = []
     clauses = _split_clauses_in_sentence(sent_tokens)
     for cl in clauses:
         sc = _score_clause(cl)
@@ -662,6 +731,7 @@ def _aggregate_sentence(sent_tokens: List[str]) -> Dict[str, float]:
         alpha_len = sum(1 for t in cl if t.isalpha())
         len_boost = 0.9 if alpha_len <= 3 else 1.0
         clause_scores.append((sc, emph * len_boost))
+        numeric_by_clause.append(sc)
 
     if not clause_scores:
         return _blank_scores()
@@ -672,9 +742,10 @@ def _aggregate_sentence(sent_tokens: List[str]) -> Dict[str, float]:
         for k in CORE_KEYS:
             out[k] += sc[k] * (w / total_w)
 
-    # NEW: contrast bias (fear before love)
-    _apply_contrast_bias_if_any(sent_tokens, clauses, out)
+    # Generalized contrast bias (covers fear/sadness/anger/disgust vs joy/passion, both orders)
+    _apply_contrast_bias_if_any(sent_tokens, clauses, numeric_by_clause, out)
     return out
+
 
 def _aggregate_sentences(sentences: List[List[str]]) -> Dict[str, float]:
     if not sentences:
@@ -704,6 +775,7 @@ def _aggregate_sentences(sentences: List[List[str]]) -> Dict[str, float]:
             raw[k] += sc[k] * w
     return raw
 
+
 def _choose_dominant(scores: Dict[str, float]) -> str:
     ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
     top_key, top_val = ordered[0]
@@ -714,11 +786,13 @@ def _choose_dominant(scores: Dict[str, float]) -> str:
 
     gap = top_val - second_val
     if gap < 0.06:
-        # NEW: near-tie preference — negative protective states win over romance/joy
-        negative = {"fear", "sadness"}
-        romantic = {"passion", "joy"}
-        if (top_key in romantic and second_key in negative) or (top_key in negative and second_key in romantic):
-            return list(negative & {top_key, second_key})[0]
+        # Prefer protective/negative cores over appetitive ones on near-ties
+        negative = {"fear", "sadness", "anger", "disgust"}
+        appetitive = {"passion", "joy"}
+        inter = (negative & {top_key, second_key}, appetitive & {top_key, second_key})
+        if inter[0] and inter[1]:
+            # Return the one that is in the negative set
+            return next(iter(inter[0]))
 
     return top_key
 
@@ -806,4 +880,5 @@ def explain_emotions(text: str, use_watson_if_available: bool = False) -> Dict[s
         "dominant": _choose_dominant(final),
     }
 
+# Back-compat alias if anything imports `emotion_detector` directly from here.
 emotion_detector = detect_emotions
