@@ -91,6 +91,7 @@ PROTOTYPES: Dict[str, List[float]] = {
 
 # Suggested emoji keyed by final label
 EMOJI_SUGGEST = {
+    # --- Rich labels (keep existing) ---
     "Angry": ["😠"], "Disgusted": ["🤢"], "Anxious": ["😨"], "Joyful": ["😊"],
     "Sad": ["😢"], "In love": ["😍"], "Shocked": ["😱"], "Awe": ["😮", "✨"],
     "Nostalgia": ["🕰️", "🙂"], "Contempt": ["😒"], "Outrage": ["😡"],
@@ -99,7 +100,19 @@ EMOJI_SUGGEST = {
     "Appalled": ["😧"], "Uneasy": ["😬"], "Apprehensive": ["😟"],
     "Delighted surprise": ["🤩"], "Indignant shock": ["😤", "😳"],
     "Moral outrage": ["😤"], "Schadenfreude": ["😏"], "Embarrassed amusement": ["😅"],
-    "Melancholy": ["🎻"], "N/A": ["🤔"],
+    "Melancholy": ["🎻"],
+
+    # --- Core labels (added so fallback labels always map) ---
+    "Anger": ["😠"],
+    "Disgust": ["🤢"],
+    "Fear": ["😨"],
+    "Joy": ["😊"],
+    "Sadness": ["😢"],
+    "Passion": ["😍"],
+    "Surprise": ["😮"],
+
+    # Fallback
+    "N/A": ["🤔"],
 }
 
 # ------------------------- numeric helpers -------------------------
@@ -151,7 +164,7 @@ def _single_state_overrides(p: Dict[str, float]) -> Optional[str]:
 
     if sad >= 0.65 and joy <= 0.20:
         return "Mourning"
-    # -- Relaxed passion+joy rule so short texts like "I'm in love" resolve correctly
+    # Relaxed passion+joy rule so short texts like "I'm in love" resolve correctly
     if (pas >= 0.50 and joy >= 0.22) or ((pas + joy) >= 0.70 and abs(pas - joy) <= 0.08):
         return "In love"
     if pas >= 0.65 and sad >= 0.25 and joy <= 0.25:
@@ -225,6 +238,7 @@ def _final_emotion_label(p: Dict[str, float]) -> str:
         if sim >= 0.72:
             return label
 
+    # Mirror dominant if nothing else qualifies
     if v1 < 0.20:
         return "N/A"
     return _title(k1)
@@ -232,6 +246,7 @@ def _final_emotion_label(p: Dict[str, float]) -> str:
 # ------------------------- emoji selection -------------------------
 
 def _emoji_for(label: str) -> List[str]:
+    # Try exact, then Title-case alias, then default
     if label in EMOJI_SUGGEST:
         return EMOJI_SUGGEST[label]
     guess = EMOJI_SUGGEST.get(_title(label))
@@ -260,6 +275,7 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
       present
       components
       emoji
+      emoji_primary
     """
     base = asdict(result)
 
@@ -272,7 +288,7 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
 
     mixture = {k: _round3(v) for k, v in p.items()}
     components = [{"name": k, "weight": _round3(v)} for k, v in _top_components(p)]
-    emoji = _emoji_for(final_single)
+    emoji_list = _emoji_for(final_single)
     present = _present_subset(p, eps=0.03)
 
     base.update(
@@ -290,7 +306,8 @@ def format_emotions(result: EmotionResult) -> Dict[str, object]:
             "mixture": mixture,
             "present": present,
             "components": components,
-            "emoji": emoji,
+            "emoji": emoji_list,
+            "emoji_primary": emoji_list[0] if emoji_list else "🤔",
         }
     )
     return base
