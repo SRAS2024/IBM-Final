@@ -185,6 +185,9 @@ INTENT_COMMIT = {
 INTENT_DESIRE = {
     "i want", "i wanna", "i would love", "i like", "i love", "i adore",
     "i need", "cant wait", "can't wait", "dying to", "itching to",
+    # Added strong passion-desire patterns:
+    "i'm in love", "im in love", "i am in love", "in love with",
+    "falling in love", "fell in love",
 }
 INTENT_REASSURE = {
     "it will be ok", "it will be okay", "we will be ok", "we will be okay",
@@ -216,9 +219,19 @@ PHRASES: List[Tuple[str, str, float]] = [
     ("head over heels", "passion", 2.0),
     ("butterflies in my stomach", "passion", 1.6),
     ("madly in love", "passion", 2.0),
+    # >>> Added generic and common "in love" variants with strong passion weight
+    ("in love", "passion", 2.2),
+    ("i'm in love", "passion", 2.4),
+    ("im in love", "passion", 2.4),
+    ("i am in love", "passion", 2.4),
+    ("in love with", "passion", 2.3),
+    ("falling in love", "passion", 2.1),
+    ("fell in love", "passion", 2.1),
+    # Surprise
     ("i could not believe", "surprise", 1.7),
     ("i can't believe", "surprise", 1.7),
     ("could not believe", "surprise", 1.7),
+    # Commitment
     ("i want to marry", "passion", 2.0),
     ("i want to marry you", "passion", 2.2),
     ("i want to marry her", "passion", 2.2),
@@ -261,6 +274,8 @@ NEGATED_PAIRS = {
     ("not", "angry"): ("anger", "fear", 0.8),
     ("no", "love"): ("passion", "sadness", 1.0),
     ("not", "inlove"): ("passion", "sadness", 1.0),
+    # handle spaced bigram: "not in love"
+    ("not", "in"): ("passion", "sadness", 0.9),
 }
 
 # Regex for simple tokenization.
@@ -462,11 +477,15 @@ def _desire_commitment_bonus(text_lower: str) -> Dict[str, float]:
     if any(p in text_lower for p in INTENT_COMMIT):
         out["passion"] += 2.3
         out["joy"] += 0.6
-        # reduce anger in case of false positives from capitals or punctuation
         out["anger"] -= 0.4
+    # Desire / affection
     if any(p in text_lower for p in INTENT_DESIRE):
-        out["passion"] += 1.2
-        out["joy"] += 0.3
+        out["passion"] += 1.6   # increased so passion wins vs JOY "love" lex hit
+        out["joy"] += 0.4
+    # A very common minimal form: just the bigram "in love"
+    if " in love" in text_lower or text_lower.startswith("in love"):
+        out["passion"] += 2.2
+        out["joy"] += 0.4
     if any(p in text_lower for p in INTENT_REASSURE):
         out["joy"] += 0.7
         out["fear"] *= 0.8
@@ -706,3 +725,6 @@ def explain_emotions(text: str, use_watson_if_available: bool = False) -> Dict[s
         "final_scores": final,
         "dominant": _choose_dominant(final),
     }
+
+# Back-compat alias if anything imports `emotion_detector` directly from here.
+emotion_detector = detect_emotions
